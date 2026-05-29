@@ -32,9 +32,15 @@ def _read_parquet_manifest_dir(parquet_dir: str, num_workers: int = 1) -> pl.Dat
         p = s.get("out_parquet") or s.get("parquet")
         if not p:
             continue
-        if not os.path.isabs(p):
-            p = os.path.join(parquet_dir, os.path.basename(p))
-        shard_paths.append(p)
+        candidates = []
+        if os.path.isabs(p):
+            candidates.append(p)
+        else:
+            candidates.append(os.path.join(parquet_dir, p))
+        # Manifests are often migrated with stale absolute paths. Prefer the
+        # current parquet directory when a same-named shard exists there.
+        candidates.append(os.path.join(parquet_dir, os.path.basename(p)))
+        shard_paths.append(next((c for c in candidates if os.path.exists(c)), candidates[0]))
     if not shard_paths:
         raise RuntimeError(f"No parquet shards found in {parquet_dir}")
     readable_paths = [p for p in shard_paths if os.path.exists(p)]
