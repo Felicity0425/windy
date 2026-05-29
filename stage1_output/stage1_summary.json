@@ -1,0 +1,9 @@
+{
+  "clean_wind_rows": 431189,
+  "clean_loc_rows": 19162638,
+  "radar_total": 7396,
+  "radar_usable": 7395,
+  "window_records": 7395,
+  "num_workers": 19,
+  "parallel_mode": "thread_pool"
+}

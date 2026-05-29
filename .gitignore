@@ -60,3 +60,8 @@ windpaper/
 *.tgz
 *.7z
 *.bundle
+
+# Explicitly back up Stage1 outputs. Parquet files here are tracked by Git LFS.
+!stage1_output/
+!stage1_output/*.json
+!stage1_output/*.parquet
