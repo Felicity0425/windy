@@ -1,0 +1,1281 @@
+{
+  "table_of_contents": [
+    {
+      "title": "\u2022 Original Paper \u2022",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          57.0390625,
+          101.095947265625
+        ],
+        [
+          125.98099517822266,
+          99.494140625
+        ],
+        [
+          125.98099517822266,
+          110.095947265625
+        ],
+        [
+          57.0390625,
+          110.095947265625
+        ]
+      ]
+    },
+    {
+      "title": "Three-Dimensional Wind Field Retrieved from Dual-Doppler\nRadar Based on a Variational Method: Refinement of\nVertical Velocity Estimates",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          113.787109375,
+          122.517578125
+        ],
+        [
+          496.181640625,
+          120.873046875
+        ],
+        [
+          496.181640625,
+          175.53509521484375
+        ],
+        [
+          113.787109375,
+          175.53509521484375
+        ]
+      ]
+    },
+    {
+      "title": "ABSTRACT",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          281.703125,
+          358.0966796875
+        ],
+        [
+          329.4296875,
+          358.0966796875
+        ],
+        [
+          329.38201904296875,
+          369.5559387207031
+        ],
+        [
+          280.5390625,
+          369.5559387207031
+        ]
+      ]
+    },
+    {
+      "title": "Article Highlights:",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          81.775390625,
+          622.7657165527344
+        ],
+        [
+          154.166015625,
+          621.2216796875
+        ],
+        [
+          154.166015625,
+          631.7657318115234
+        ],
+        [
+          81.775390625,
+          631.9111328125
+        ]
+      ]
+    },
+    {
+      "title": "1.    Introduction",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          40.7421875,
+          101.724609375
+        ],
+        [
+          127.30400085449219,
+          100.31640625
+        ],
+        [
+          127.30400085449219,
+          113.724609375
+        ],
+        [
+          40.7421875,
+          113.724609375
+        ]
+      ]
+    },
+    {
+      "title": "2. Description of variational methodology",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          56.297229219143574,
+          252.67497773820125
+        ],
+        [
+          278.4836272040302,
+          252.67497773820125
+        ],
+        [
+          278.4836272040302,
+          263.5361328125
+        ],
+        [
+          56.297229219143574,
+          263.5361328125
+        ]
+      ]
+    },
+    {
+      "title": "3. Estimation of vertical velocity",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          293.052734375,
+          636.5609973285841
+        ],
+        [
+          470.64483627204027,
+          636.43359375
+        ],
+        [
+          470.64483627204027,
+          647.0578806767586
+        ],
+        [
+          293.052734375,
+          647.9453125
+        ]
+      ]
+    },
+    {
+      "title": "4. Tests with a simulated supercell case",
+      "heading_level": null,
+      "page_id": 4,
+      "polygon": [
+        [
+          311.095703125,
+          669.5512021371327
+        ],
+        [
+          522.4382871536524,
+          668.501953125
+        ],
+        [
+          522.4382871536524,
+          680.0480854853072
+        ],
+        [
+          311.095703125,
+          680.7978628673196
+        ]
+      ]
+    },
+    {
+      "title": "4.1. Model setup and simulation data",
+      "heading_level": null,
+      "page_id": 4,
+      "polygon": [
+        [
+          310.22265625,
+          693.9921875
+        ],
+        [
+          472.896725440806,
+          693.9921875
+        ],
+        [
+          472.896725440806,
+          704.0409617097062
+        ],
+        [
+          310.22265625,
+          704.0409617097062
+        ]
+      ]
+    },
+    {
+      "title": "4.2.    Verification of the horizontal velocity",
+      "heading_level": null,
+      "page_id": 6,
+      "polygon": [
+        [
+          56.748046875,
+          755.082160949707
+        ],
+        [
+          236.20997619628906,
+          753.6064453125
+        ],
+        [
+          236.20997619628906,
+          765.082160949707
+        ],
+        [
+          56.748046875,
+          765.082160949707
+        ]
+      ]
+    },
+    {
+      "title": "4.3.    Verification of the vertical velocity",
+      "heading_level": null,
+      "page_id": 7,
+      "polygon": [
+        [
+          39.869140625,
+          309.994140625
+        ],
+        [
+          208.076171875,
+          308.349609375
+        ],
+        [
+          207.98997497558594,
+          320.09197998046875
+        ],
+        [
+          38.705078125,
+          320.09197998046875
+        ]
+      ]
+    },
+    {
+      "title": "4.3.1.    Experiment design",
+      "heading_level": null,
+      "page_id": 7,
+      "polygon": [
+        [
+          39.869140625,
+          331.7841796875
+        ],
+        [
+          148.1300048828125,
+          330.1396484375
+        ],
+        [
+          148.1300048828125,
+          342.07196044921875
+        ],
+        [
+          38.705078125,
+          342.07196044921875
+        ]
+      ]
+    },
+    {
+      "title": "4.3.2.    Vertical velocity derived from model-simulated\nhorizontal wind",
+      "heading_level": null,
+      "page_id": 7,
+      "polygon": [
+        [
+          294.798828125,
+          178.431640625
+        ],
+        [
+          537.8199462890625,
+          176.787109375
+        ],
+        [
+          537.8199462890625,
+          199.4920654296875
+        ],
+        [
+          294.798828125,
+          199.4920654296875
+        ]
+      ]
+    },
+    {
+      "title": "4.3.3.    Vertical velocity obtained from retrieved horizontal\nwind",
+      "heading_level": null,
+      "page_id": 8,
+      "polygon": [
+        [
+          57.0390625,
+          230.234375
+        ],
+        [
+          299.4199523925781,
+          230.234375
+        ],
+        [
+          299.4199523925781,
+          252.43212890625
+        ],
+        [
+          57.0390625,
+          252.43212890625
+        ]
+      ]
+    },
+    {
+      "title": "5.    Application to a real squall line case",
+      "heading_level": null,
+      "page_id": 9,
+      "polygon": [
+        [
+          294.798828125,
+          166.09765625
+        ],
+        [
+          501.419921875,
+          164.453125
+        ],
+        [
+          501.4120178222656,
+          178.3345947265625
+        ],
+        [
+          293.634765625,
+          178.3345947265625
+        ]
+      ]
+    },
+    {
+      "title": "5.1.    Data preprocessing",
+      "heading_level": null,
+      "page_id": 9,
+      "polygon": [
+        [
+          294.5078125,
+          278.3521728515625
+        ],
+        [
+          400.5699768066406,
+          277.103515625
+        ],
+        [
+          400.5699768066406,
+          288.3521728515625
+        ],
+        [
+          294.5078125,
+          288.615234375
+        ]
+      ]
+    },
+    {
+      "title": "5.2.    Results of retrieved winds",
+      "heading_level": null,
+      "page_id": 10,
+      "polygon": [
+        [
+          56.748046875,
+          215.72210693359375
+        ],
+        [
+          188.21998596191406,
+          214.2001953125
+        ],
+        [
+          188.21998596191406,
+          225.72216796875
+        ],
+        [
+          56.748046875,
+          225.72216796875
+        ]
+      ]
+    },
+    {
+      "title": "5.2.1.    Comparison with VAD wind profile (VWP)",
+      "heading_level": null,
+      "page_id": 10,
+      "polygon": [
+        [
+          57.330078125,
+          286.51214599609375
+        ],
+        [
+          262.787109375,
+          284.9150390625
+        ],
+        [
+          261.8000183105469,
+          296.51220703125
+        ],
+        [
+          56.166015625,
+          296.51220703125
+        ]
+      ]
+    },
+    {
+      "title": "5.2.2.    Comparison with the observed radial velocity",
+      "heading_level": null,
+      "page_id": 10,
+      "polygon": [
+        [
+          311.96875,
+          166.5087890625
+        ],
+        [
+          527.7599487304688,
+          164.8642578125
+        ],
+        [
+          527.7599487304688,
+          176.55218505859375
+        ],
+        [
+          311.96875,
+          176.55218505859375
+        ]
+      ]
+    },
+    {
+      "title": "5.2.3.    Dynamic verification",
+      "heading_level": null,
+      "page_id": 11,
+      "polygon": [
+        [
+          40.99977111816406,
+          753.6064453125
+        ],
+        [
+          158.09999084472656,
+          753.6064453125
+        ],
+        [
+          158.09999084472656,
+          765.082160949707
+        ],
+        [
+          40.99977111816406,
+          765.082160949707
+        ]
+      ]
+    },
+    {
+      "title": "6.    Summary and concluding remarks",
+      "heading_level": null,
+      "page_id": 13,
+      "polygon": [
+        [
+          39.869140625,
+          606.7445831298828
+        ],
+        [
+          240.2479705810547,
+          606.7445831298828
+        ],
+        [
+          240.2479705810547,
+          618.7445831298828
+        ],
+        [
+          39.869140625,
+          618.7445831298828
+        ]
+      ]
+    },
+    {
+      "title": "REFERENCES",
+      "heading_level": null,
+      "page_id": 14,
+      "polygon": [
+        [
+          147.8359375,
+          595.7314453125
+        ],
+        [
+          208.68197631835938,
+          594.0869140625
+        ],
+        [
+          208.68197631835938,
+          606.3160552978516
+        ],
+        [
+          146.671875,
+          606.3160552978516
+        ]
+      ]
+    }
+  ],
+  "page_stats": [
+    {
+      "page_id": 0,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          141
+        ],
+        [
+          "Line",
+          48
+        ],
+        [
+          "Text",
+          6
+        ],
+        [
+          "SectionHeader",
+          4
+        ],
+        [
+          "ListItem",
+          3
+        ],
+        [
+          "PageHeader",
+          1
+        ],
+        [
+          "Footnote",
+          1
+        ],
+        [
+          "PageFooter",
+          1
+        ],
+        [
+          "ListGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 1,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          260
+        ],
+        [
+          "Line",
+          113
+        ],
+        [
+          "Text",
+          6
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "SectionHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 2,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Span",
+          123
+        ],
+        [
+          "Line",
+          101
+        ],
+        [
+          "Text",
+          6
+        ],
+        [
+          "Equation",
+          5
+        ],
+        [
+          "PageHeader",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 3,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Span",
+          110
+        ],
+        [
+          "Line",
+          101
+        ],
+        [
+          "Text",
+          9
+        ],
+        [
+          "Equation",
+          5
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "SectionHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 4,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Span",
+          127
+        ],
+        [
+          "Line",
+          117
+        ],
+        [
+          "Text",
+          8
+        ],
+        [
+          "Equation",
+          3
+        ],
+        [
+          "SectionHeader",
+          2
+        ],
+        [
+          "PageHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 5,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          108
+        ],
+        [
+          "Span",
+          45
+        ],
+        [
+          "Text",
+          8
+        ],
+        [
+          "Equation",
+          4
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 6,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          212
+        ],
+        [
+          "Line",
+          56
+        ],
+        [
+          "Text",
+          3
+        ],
+        [
+          "Equation",
+          2
+        ],
+        [
+          "PageHeader",
+          1
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 7,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          251
+        ],
+        [
+          "TableCell",
+          142
+        ],
+        [
+          "Line",
+          82
+        ],
+        [
+          "Text",
+          5
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "SectionHeader",
+          3
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "Table",
+          2
+        ],
+        [
+          "Reference",
+          2
+        ],
+        [
+          "TableGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 8,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          84
+        ],
+        [
+          "Line",
+          40
+        ],
+        [
+          "Text",
+          3
+        ],
+        [
+          "PageHeader",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 9,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          104
+        ],
+        [
+          "Line",
+          41
+        ],
+        [
+          "Text",
+          5
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "SectionHeader",
+          2
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 10,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          173
+        ],
+        [
+          "Line",
+          56
+        ],
+        [
+          "TableCell",
+          30
+        ],
+        [
+          "Text",
+          5
+        ],
+        [
+          "SectionHeader",
+          3
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "Reference",
+          2
+        ],
+        [
+          "PageHeader",
+          1
+        ],
+        [
+          "Table",
+          1
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "TableGroup",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 11,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          287
+        ],
+        [
+          "Line",
+          93
+        ],
+        [
+          "Text",
+          5
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 12,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          29
+        ],
+        [
+          "Line",
+          9
+        ],
+        [
+          "Figure",
+          2
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "FigureGroup",
+          2
+        ],
+        [
+          "Reference",
+          2
+        ],
+        [
+          "PageHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 13,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          94
+        ],
+        [
+          "Line",
+          39
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "Text",
+          2
+        ],
+        [
+          "ListItem",
+          2
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "Caption",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "ListGroup",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 14,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          305
+        ],
+        [
+          "Line",
+          118
+        ],
+        [
+          "ListItem",
+          21
+        ],
+        [
+          "Reference",
+          20
+        ],
+        [
+          "Text",
+          4
+        ],
+        [
+          "ListGroup",
+          2
+        ],
+        [
+          "PageHeader",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 15,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          393
+        ],
+        [
+          "Line",
+          118
+        ],
+        [
+          "ListItem",
+          30
+        ],
+        [
+          "Reference",
+          28
+        ],
+        [
+          "PageHeader",
+          3
+        ],
+        [
+          "ListGroup",
+          2
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    }
+  ],
+  "debug_data_path": "debug_data\\s00376-021-1035-9"
+}

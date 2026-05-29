@@ -1,0 +1,61 @@
+.git/
+.git_meta_pengxu/
+
+# Local agent/editor/runtime state
+.agents/
+.codex/
+.vscode/
+.empty/
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.conda/
+.venv/
+venv/
+env/
+
+# Logs and temporary outputs
+*.log
+*.tmp
+*.bak
+nohup.out
+stage/logs/
+stage/logs_v2/
+stage/_organized_stage/08_logs_views/
+
+# Project generated outputs
+centralized_v1_output/
+_organized_outputs/
+stage5_visualizations/
+
+# Large/raw meteorological or tabular data
+cma/
+windpaper/
+20260224/*
+!20260224/location_location_quality_corrected_rates.csv
+!20260224/location_location_quality_report_fixed.json
+!20260224/location_location_quality_report.json
+*.xlsx
+*.xls
+*.parquet
+*.npz
+*.npy
+*.nc
+*.grib
+*.grib2
+*.h5
+*.hdf5
+
+# Archive bundles should be backed up outside normal Git.
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z

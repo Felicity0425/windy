@@ -1,0 +1,47 @@
+"""Config for centralized_v1 ground-air architecture prototype."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+BASE_DIR = Path("/data/LFT-W02_data/pengxu")
+STAGE2_INPUT_DIR = BASE_DIR / "stage2_output"
+STAGE3_OUTPUT_DIR = BASE_DIR / "centralized_v1_output" / "stage3_center"
+STAGE4_OUTPUT_DIR = BASE_DIR / "centralized_v1_output" / "stage4_center"
+STAGE5_OUTPUT_DIR = BASE_DIR / "centralized_v1_output" / "stage5_center"
+MULTIMODAL_STAGE2_OUTPUT_DIR = BASE_DIR / "centralized_v1_output" / "stage2_multimodal"
+REGENERATED_STAGE2_OUTPUT_DIR = BASE_DIR / "centralized_v1_output" / "stage2_regenerated"
+
+LAT_MIN = 12.2
+LAT_MAX = 54.2
+LON_MIN = 73.0
+LON_MAX = 135.0
+ALT_MIN = 0.0
+ALT_MAX = 15000.0
+DELTA_ALT = float(os.environ.get("CENTRALIZED_V1_DELTA_ALT", "500.0"))
+Z_DIM = int((ALT_MAX - ALT_MIN) / DELTA_ALT) + 1
+
+VOXEL_XY_DOWNSAMPLE = int(os.environ.get("CENTRALIZED_V1_VOXEL_XY_DOWNSAMPLE", "4"))
+VOXEL_Z_DOWNSAMPLE = int(os.environ.get("CENTRALIZED_V1_VOXEL_Z_DOWNSAMPLE", "2"))
+TIME_WINDOW_MINUTES = int(os.environ.get("CENTRALIZED_V1_TIME_WINDOW_MINUTES", "5"))
+CONTEXT_WINDOW_MINUTES = int(os.environ.get("CENTRALIZED_V1_CONTEXT_WINDOW_MINUTES", "360"))
+CONTEXT_TIME_CONF_HALFLIFE_MINUTES = float(os.environ.get("CENTRALIZED_V1_CONTEXT_TIME_CONF_HALFLIFE_MINUTES", "180.0"))
+CONTEXT_SPACE_SIGMA_KM = float(os.environ.get("CENTRALIZED_V1_CONTEXT_SPACE_SIGMA_KM", "180.0"))
+CONTEXT_VERTICAL_SIGMA_M = float(os.environ.get("CENTRALIZED_V1_CONTEXT_VERTICAL_SIGMA_M", "2500.0"))
+GROUND_CENTER_FALLBACK_LAT = float(os.environ.get("CENTRALIZED_V1_GROUND_CENTER_FALLBACK_LAT", str((LAT_MIN + LAT_MAX) / 2.0)))
+GROUND_CENTER_FALLBACK_LON = float(os.environ.get("CENTRALIZED_V1_GROUND_CENTER_FALLBACK_LON", str((LON_MIN + LON_MAX) / 2.0)))
+GROUND_CENTER_FALLBACK_ALT_M = float(os.environ.get("CENTRALIZED_V1_GROUND_CENTER_FALLBACK_ALT_M", "0.0"))
+
+TIME_CONF_ALPHA = float(os.environ.get("CENTRALIZED_V1_TIME_CONF_ALPHA", "0.12"))
+SPACE_CONF_BETA = float(os.environ.get("CENTRALIZED_V1_SPACE_CONF_BETA", "0.015"))
+
+PINN_DIVERGENCE_WEIGHT = float(os.environ.get("CENTRALIZED_V1_PINN_DIVERGENCE_WEIGHT", "0.03"))
+PINN_SMOOTHNESS_WEIGHT = float(os.environ.get("CENTRALIZED_V1_PINN_SMOOTHNESS_WEIGHT", "0.02"))
+PINN_TEMPORAL_WEIGHT = float(os.environ.get("CENTRALIZED_V1_PINN_TEMPORAL_WEIGHT", "0.01"))
+
+DIFFUSION_BLEND = float(os.environ.get("CENTRALIZED_V1_DIFFUSION_BLEND", "0.18"))
+CLOUD_ADVECT_BLEND = float(os.environ.get("CENTRALIZED_V1_CLOUD_ADVECT_BLEND", "0.75"))
+
+BLINDZONE_IDW_RADIUS_XY = int(os.environ.get("CENTRALIZED_V1_BLINDZONE_IDW_RADIUS_XY", "12"))
+BLINDZONE_IDW_RADIUS_Z = int(os.environ.get("CENTRALIZED_V1_BLINDZONE_IDW_RADIUS_Z", "2"))

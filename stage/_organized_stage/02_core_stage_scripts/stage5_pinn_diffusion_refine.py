@@ -1,0 +1,1 @@
+/data/LFT-W02_data/pengxu/stage/stage5_pinn_diffusion_refine.py

@@ -1,0 +1,946 @@
+{
+  "table_of_contents": [
+    {
+      "title": "Estimates of Mode-S EHS aircraft-derived wind observation errors using triple collocation",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          44.287153652392945,
+          160.65329512893985
+        ],
+        [
+          540.4534005037783,
+          160.65329512893985
+        ],
+        [
+          540.4534005037783,
+          199.18652343750003
+        ],
+        [
+          44.287153652392945,
+          200.72167968750003
+        ]
+      ]
+    },
+    {
+      "title": "Siebren de Haan",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          45.03778337531486,
+          212.45272206303727
+        ],
+        [
+          118.59949622166246,
+          211.85156250000003
+        ],
+        [
+          118.59949622166246,
+          220.7106017191977
+        ],
+        [
+          45.03778337531486,
+          221.06250000000003
+        ]
+      ]
+    },
+    {
+      "title": "1 Introduction",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          45.03778337531486,
+          662.8037109375
+        ],
+        [
+          117.09823677581863,
+          662.8037109375
+        ],
+        [
+          117.09823677581863,
+          671.8911174785101
+        ],
+        [
+          45.03778337531486,
+          671.8911174785101
+        ]
+      ]
+    },
+    {
+      "title": "2 Data",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          45.689453125,
+          520.0341796875
+        ],
+        [
+          81.90513706207275,
+          520.0341796875
+        ],
+        [
+          81.90513706207275,
+          532.085036277771
+        ],
+        [
+          44.525390625,
+          532.085036277771
+        ]
+      ]
+    },
+    {
+      "title": "2.1 Aircraft-derived data (Mode-S EHS)",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          46.4880952835083,
+          604.083984375
+        ],
+        [
+          224.85846042633057,
+          602.548828125
+        ],
+        [
+          224.85846042633057,
+          614.5040578842163
+        ],
+        [
+          45.3984375,
+          614.5040578842163
+        ]
+      ]
+    },
+    {
+      "title": "2.2 Radar and sodar",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          306.439453125,
+          648.9873046875
+        ],
+        [
+          401.6507730484009,
+          648.9873046875
+        ],
+        [
+          401.6507730484009,
+          661.1120901107788
+        ],
+        [
+          306.439453125,
+          661.1120901107788
+        ]
+      ]
+    },
+    {
+      "title": "2.3 NWP data",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          45.03778337531486,
+          602.1650390625
+        ],
+        [
+          114.09571788413098,
+          602.1650390625
+        ],
+        [
+          114.09571788413098,
+          611.0830945558739
+        ],
+        [
+          45.03778337531486,
+          611.0830945558739
+        ]
+      ]
+    },
+    {
+      "title": "3 Methodology",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          45.98046875,
+          197.85841274261475
+        ],
+        [
+          117.33213138580322,
+          196.5
+        ],
+        [
+          117.33213138580322,
+          207.8209981918335
+        ],
+        [
+          45.98046875,
+          207.8209981918335
+        ]
+      ]
+    },
+    {
+      "title": "3.1 Collocation algorithm",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          45.98046875,
+          280.93359375
+        ],
+        [
+          162.16381931304932,
+          279.3984375
+        ],
+        [
+          162.16381931304932,
+          291.3610677719116
+        ],
+        [
+          45.98046875,
+          291.3610677719116
+        ]
+      ]
+    },
+    {
+      "title": "3.1.1 Radar and Mode-S EHS data collocation method",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          45.98046875,
+          400.29199218750006
+        ],
+        [
+          284.494553565979,
+          400.29199218750006
+        ],
+        [
+          284.494553565979,
+          410.76698207855225
+        ],
+        [
+          45.98046875,
+          410.76698207855225
+        ]
+      ]
+    },
+    {
+      "title": "3.1.2 Sodar and Mode-S EHS data collocation method",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          306.1484375,
+          539.2236328125
+        ],
+        [
+          543.6277933120728,
+          539.2236328125
+        ],
+        [
+          543.6277933120728,
+          550.3038625717163
+        ],
+        [
+          306.1484375,
+          550.3038625717163
+        ]
+      ]
+    },
+    {
+      "title": "3.2 Triple collocation",
+      "heading_level": null,
+      "page_id": 4,
+      "polygon": [
+        [
+          45.03778337531486,
+          65.244140625
+        ],
+        [
+          143.37027707808562,
+          63.70898437500001
+        ],
+        [
+          143.37027707808562,
+          74.32091690544414
+        ],
+        [
+          44.525390625,
+          74.455078125
+        ]
+      ]
+    },
+    {
+      "title": "4 Results",
+      "heading_level": null,
+      "page_id": 5,
+      "polygon": [
+        [
+          46.5625,
+          629.8510028653295
+        ],
+        [
+          93.82871536523929,
+          629.0302734375
+        ],
+        [
+          93.82871536523929,
+          638.10888252149
+        ],
+        [
+          46.5625,
+          639.0087890625
+        ]
+      ]
+    },
+    {
+      "title": "4.1 Mode-S EHS and sodar wind observation error",
+      "heading_level": null,
+      "page_id": 5,
+      "polygon": [
+        [
+          45.689453125,
+          651.673828125
+        ],
+        [
+          270.9773299748111,
+          651.673828125
+        ],
+        [
+          270.9773299748111,
+          661.381088825215
+        ],
+        [
+          44.525390625,
+          661.381088825215
+        ]
+      ]
+    },
+    {
+      "title": "4.2 Mode-S EHS, radar and sodar wind observation error",
+      "heading_level": null,
+      "page_id": 6,
+      "polygon": [
+        [
+          44.81640625,
+          665.8853868194843
+        ],
+        [
+          275.48110831234254,
+          665.1064453125
+        ],
+        [
+          275.48110831234254,
+          684.2958984375
+        ],
+        [
+          44.81640625,
+          685.8310546875
+        ]
+      ]
+    },
+    {
+      "title": "5 Conclusions and outlook",
+      "heading_level": null,
+      "page_id": 8,
+      "polygon": [
+        [
+          45.107421875,
+          592.1865234375
+        ],
+        [
+          166.63979848866498,
+          592.1865234375
+        ],
+        [
+          166.63979848866498,
+          600.6298828125
+        ],
+        [
+          45.107421875,
+          600.6298828125
+        ]
+      ]
+    },
+    {
+      "title": "References",
+      "heading_level": null,
+      "page_id": 9,
+      "polygon": [
+        [
+          46.271484375,
+          161.958984375
+        ],
+        [
+          92.77432346343994,
+          160.423828125
+        ],
+        [
+          92.77432346343994,
+          172.3730001449585
+        ],
+        [
+          45.107421875,
+          172.3730001449585
+        ]
+      ]
+    }
+  ],
+  "page_stats": [
+    {
+      "page_id": 0,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          89
+        ],
+        [
+          "Span",
+          83
+        ],
+        [
+          "Text",
+          8
+        ],
+        [
+          "SectionHeader",
+          3
+        ],
+        [
+          "Picture",
+          2
+        ],
+        [
+          "PageFooter",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 1,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          256
+        ],
+        [
+          "Line",
+          109
+        ],
+        [
+          "Text",
+          11
+        ],
+        [
+          "SectionHeader",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "Footnote",
+          1
+        ],
+        [
+          "Reference",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 2,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          97
+        ],
+        [
+          "Span",
+          67
+        ],
+        [
+          "TableCell",
+          18
+        ],
+        [
+          "Text",
+          6
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "Reference",
+          2
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "Table",
+          1
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "TableGroup",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 3,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          168
+        ],
+        [
+          "Line",
+          81
+        ],
+        [
+          "TableCell",
+          15
+        ],
+        [
+          "Text",
+          6
+        ],
+        [
+          "SectionHeader",
+          4
+        ],
+        [
+          "Reference",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "Table",
+          1
+        ],
+        [
+          "Picture",
+          1
+        ],
+        [
+          "TableGroup",
+          1
+        ],
+        [
+          "PictureGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 4,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          124
+        ],
+        [
+          "Span",
+          94
+        ],
+        [
+          "Text",
+          10
+        ],
+        [
+          "Equation",
+          10
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "SectionHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 5,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          161
+        ],
+        [
+          "Span",
+          54
+        ],
+        [
+          "Text",
+          7
+        ],
+        [
+          "Reference",
+          4
+        ],
+        [
+          "Figure",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "SectionHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "FigureGroup",
+          2
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 6,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          117
+        ],
+        [
+          "Span",
+          46
+        ],
+        [
+          "TableCell",
+          33
+        ],
+        [
+          "Text",
+          8
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "Reference",
+          2
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "Table",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ],
+        [
+          "TableGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 7,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          137
+        ],
+        [
+          "Span",
+          40
+        ],
+        [
+          "Text",
+          5
+        ],
+        [
+          "Figure",
+          3
+        ],
+        [
+          "Caption",
+          3
+        ],
+        [
+          "FigureGroup",
+          3
+        ],
+        [
+          "Reference",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 8,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          97
+        ],
+        [
+          "TableCell",
+          56
+        ],
+        [
+          "Span",
+          46
+        ],
+        [
+          "Text",
+          8
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Caption",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "Reference",
+          2
+        ],
+        [
+          "Table",
+          1
+        ],
+        [
+          "Figure",
+          1
+        ],
+        [
+          "SectionHeader",
+          1
+        ],
+        [
+          "TableGroup",
+          1
+        ],
+        [
+          "FigureGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 9,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          139
+        ],
+        [
+          "Line",
+          65
+        ],
+        [
+          "ListItem",
+          16
+        ],
+        [
+          "Reference",
+          16
+        ],
+        [
+          "Text",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          2
+        ],
+        [
+          "ListGroup",
+          2
+        ],
+        [
+          "SectionHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    }
+  ],
+  "debug_data_path": "debug_data\\amt-9-4141-2016"
+}
