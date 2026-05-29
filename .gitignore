@@ -6,6 +6,7 @@
 .codex/
 .vscode/
 .empty/
+.github_deploy_keys/
 
 # Python/runtime caches
 __pycache__/
