@@ -33,6 +33,7 @@ from stage.centralized_v1.core.centralized_stage4_ground_recon import (
     PHYSICS_CONSTRAINT_MODES,
     ROLE_CONFLICT_MODES,
     STRICT_STAGE4_OUTPUT_DIR,
+    VERTICAL_RISK_MODES,
     _accumulate_localized,
     _build_wind_observations,
     _field_proxy_diagnostics,
@@ -60,6 +61,7 @@ from stage.centralized_v1.configs.centralized_v1_contract import (
     C2_MOTION_RECORDS,
     C2_WIND_RECORDS,
 )
+from stage.centralized_v1.core.centralized_stage4_stratified_eval import write_stratified_eval
 
 
 DEFAULT_EXPANDED_FRAMES = (
@@ -222,7 +224,10 @@ def _evaluate_metrics_only(
     physics_constraint_mode: str,
     observation_anchor_weight: float,
     speed_limit_mps: float,
-    qc_calibration: dict[str, Any] | None,
+    vertical_risk_mode: str = "off",
+    vertical_gradient_preserve_weight: float = 0.12,
+    vertical_context_mismatch_damping: float = 0.35,
+    qc_calibration: dict[str, Any] | None = None,
     current_weight_boost: float = 1.0,
     context_weight_scale: float = 1.0,
     context_time_conf_power: float = 1.0,
@@ -283,6 +288,9 @@ def _evaluate_metrics_only(
         physics_constraint_mode=physics_constraint_mode,
         observation_anchor_weight=observation_anchor_weight,
         speed_limit_mps=speed_limit_mps,
+        vertical_risk_mode=vertical_risk_mode,
+        vertical_gradient_preserve_weight=vertical_gradient_preserve_weight,
+        vertical_context_mismatch_damping=vertical_context_mismatch_damping,
     )
     recon = _finalize_effective_reconstruction(recon)
     point_rows = _point_eval_rows(holdout_wind, recon["recon_u"], recon["recon_v"], recon["recon_conf"], observations, acc)
@@ -340,6 +348,13 @@ def _evaluate_metrics_only(
         "diffusion_fill_new_voxels": int(refine_metrics["diffusion_fill_new_voxels"]),
         "observation_anchor_weight": float(observation_anchor_weight),
         "speed_limit_mps": float(speed_limit_mps),
+        "vertical_risk_mode": str(vertical_risk_mode),
+        "vertical_gradient_preserve_weight": float(vertical_gradient_preserve_weight),
+        "vertical_context_mismatch_damping": float(vertical_context_mismatch_damping),
+        "vertical_risk_refine_enabled": float(refine_metrics.get("vertical_risk_refine_enabled", 0.0)),
+        "vertical_risk_candidate_voxels_last": int(refine_metrics.get("vertical_risk_candidate_voxels_last", 0.0)),
+        "vertical_oversmooth_preserve_voxels_last": int(refine_metrics.get("vertical_oversmooth_preserve_voxels_last", 0.0)),
+        "vertical_context_mismatch_damped_voxels_last": int(refine_metrics.get("vertical_context_mismatch_damped_voxels_last", 0.0)),
         "current_weight_boost": float(current_weight_boost),
         "context_weight_scale": float(context_weight_scale),
         "context_time_conf_power": float(context_time_conf_power),
@@ -432,6 +447,9 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row.get("role_conflict_mode"),
             row.get("conflict_speed_threshold_mps"),
             row.get("conflict_context_factor"),
+            row.get("vertical_risk_mode"),
+            row.get("vertical_gradient_preserve_weight"),
+            row.get("vertical_context_mismatch_damping"),
         )
         groups.setdefault(key, []).append(row)
     out: list[dict[str, Any]] = []
@@ -451,6 +469,9 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "role_conflict_mode": key[10],
                 "conflict_speed_threshold_mps": key[11],
                 "conflict_context_factor": key[12],
+                "vertical_risk_mode": key[13],
+                "vertical_gradient_preserve_weight": key[14],
+                "vertical_context_mismatch_damping": key[15],
                 "frames": len(group_rows),
                 "mean_rmse_vector": float(np.mean([float(r["rmse_vector"]) for r in group_rows])),
                 "mean_mae_vector": float(np.mean([float(r["mae_vector"]) for r in group_rows])),
@@ -468,6 +489,15 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     np.mean([float(r.get("vertical_oversmoothing_candidate_voxels", 0.0)) for r in group_rows])
                 ),
                 "mean_strong_vertical_isolated_voxels": float(np.mean([float(r.get("strong_vertical_isolated_voxels", 0.0)) for r in group_rows])),
+                "mean_vertical_risk_candidate_voxels_last": float(
+                    np.mean([float(r.get("vertical_risk_candidate_voxels_last", 0.0)) for r in group_rows])
+                ),
+                "mean_vertical_oversmooth_preserve_voxels_last": float(
+                    np.mean([float(r.get("vertical_oversmooth_preserve_voxels_last", 0.0)) for r in group_rows])
+                ),
+                "mean_vertical_context_mismatch_damped_voxels_last": float(
+                    np.mean([float(r.get("vertical_context_mismatch_damped_voxels_last", 0.0)) for r in group_rows])
+                ),
                 "all_strict_holdout_no_leakage": bool(all(_as_bool(r["strict_holdout_no_leakage"]) for r in group_rows)),
                 "any_motion_used_as_wind": bool(any(_as_bool(r["motion_used_as_wind"]) for r in group_rows)),
             }
@@ -481,13 +511,13 @@ def _write_aggregate_md(path: Path, rows: list[dict[str, Any]]) -> None:
         "",
         "Metrics-only aggregate. No per-parameter 3D NPZ fields are saved.",
         "",
-        "| rank | kernel | confidence | physics | role conflict | rxy/sxy/rz/sz | frames | mean RMSE | mean MAE | mean fill | mean effective | leakage | motion used |",
-        "| ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+        "| rank | kernel | confidence | physics | role conflict | vertical risk | rxy/sxy/rz/sz | frames | mean RMSE | mean MAE | mean fill | mean effective | leakage | motion used |",
+        "| ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for idx, row in enumerate(rows, start=1):
         lines.append(
             f"| {idx} | `{row['kernel']}` | `{row['confidence_mode']}` | `{row['physics_constraint_mode']}` | "
-            f"`{row['role_conflict_mode']}` | "
+            f"`{row['role_conflict_mode']}` | `{row.get('vertical_risk_mode', 'off')}` | "
             f"{row['localization_radius_xy']}/{row['localization_sigma_xy']}/"
             f"{row['localization_radius_z']}/{row['localization_sigma_z']} | "
             f"{row['frames']} | {row['mean_rmse_vector']:.6f} | {row['mean_mae_vector']:.6f} | "
@@ -499,8 +529,8 @@ def _write_aggregate_md(path: Path, rows: list[dict[str, Any]]) -> None:
             "",
             "## Adaptive/Vertical Diagnostics",
             "",
-            "| rank | mean conflict voxels | mean adaptive threshold | mean context factor | mean vertical mismatch | mean oversmooth | mean isolated strong |",
-            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| rank | mean conflict voxels | mean adaptive threshold | mean context factor | mean vertical mismatch | mean oversmooth | mean isolated strong | refine risk | refine oversmooth preserve | refine mismatch damp |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for idx, row in enumerate(rows, start=1):
@@ -510,7 +540,10 @@ def _write_aggregate_md(path: Path, rows: list[dict[str, Any]]) -> None:
             f"{row.get('mean_role_conflict_context_factor', 0.0):.3f} | "
             f"{row.get('mean_vertical_context_mismatch_candidate_voxels', 0.0):.1f} | "
             f"{row.get('mean_vertical_oversmoothing_candidate_voxels', 0.0):.1f} | "
-            f"{row.get('mean_strong_vertical_isolated_voxels', 0.0):.1f} |"
+            f"{row.get('mean_strong_vertical_isolated_voxels', 0.0):.1f} | "
+            f"{row.get('mean_vertical_risk_candidate_voxels_last', 0.0):.1f} | "
+            f"{row.get('mean_vertical_oversmooth_preserve_voxels_last', 0.0):.1f} | "
+            f"{row.get('mean_vertical_context_mismatch_damped_voxels_last', 0.0):.1f} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -602,6 +635,12 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]],
             str(args.observation_anchor_weight),
             "--speed-limit-mps",
             str(args.speed_limit_mps),
+            "--vertical-risk-mode",
+            str(args.vertical_risk_mode),
+            "--vertical-gradient-preserve-weight",
+            str(args.vertical_gradient_preserve_weight),
+            "--vertical-context-mismatch-damping",
+            str(args.vertical_context_mismatch_damping),
             "--current-weight-boost",
             str(args.current_weight_boost),
             "--context-weight-scale",
@@ -677,6 +716,9 @@ def main() -> None:
     parser.add_argument("--physics-constraint-mode", choices=sorted(PHYSICS_CONSTRAINT_MODES), default="proxy")
     parser.add_argument("--observation-anchor-weight", type=float, default=0.10)
     parser.add_argument("--speed-limit-mps", type=float, default=120.0)
+    parser.add_argument("--vertical-risk-mode", choices=sorted(VERTICAL_RISK_MODES), default="off")
+    parser.add_argument("--vertical-gradient-preserve-weight", type=float, default=0.12)
+    parser.add_argument("--vertical-context-mismatch-damping", type=float, default=0.35)
     parser.add_argument("--current-weight-boost", type=float, default=1.0)
     parser.add_argument("--context-weight-scale", type=float, default=1.0)
     parser.add_argument("--context-time-conf-power", type=float, default=1.0)
@@ -739,6 +781,9 @@ def main() -> None:
                             physics_constraint_mode=str(args.physics_constraint_mode),
                             observation_anchor_weight=float(args.observation_anchor_weight),
                             speed_limit_mps=float(args.speed_limit_mps),
+                            vertical_risk_mode=str(args.vertical_risk_mode),
+                            vertical_gradient_preserve_weight=float(args.vertical_gradient_preserve_weight),
+                            vertical_context_mismatch_damping=float(args.vertical_context_mismatch_damping),
                             qc_calibration=qc_calibration,
                             current_weight_boost=float(args.current_weight_boost),
                             context_weight_scale=float(args.context_weight_scale),
@@ -768,6 +813,12 @@ def main() -> None:
     _write_csv(aggregate_csv_path, aggregate_rows)
     _write_aggregate_md(aggregate_md_path, aggregate_rows)
     _write_frame_times(frame_times_path, stage2_rows)
+    stratified_eval = write_stratified_eval(
+        rows,
+        args.out_dir / "stratified_eval",
+        expected_frames=0,
+        source_csv=str(csv_path),
+    )
     run_meta = {
         "stage2_summary": str(args.stage2_summary),
         "stage3_summary": str(args.stage3_summary),
@@ -780,6 +831,9 @@ def main() -> None:
         "physics_constraint_mode": str(args.physics_constraint_mode),
         "observation_anchor_weight": float(args.observation_anchor_weight),
         "speed_limit_mps": float(args.speed_limit_mps),
+        "vertical_risk_mode": str(args.vertical_risk_mode),
+        "vertical_gradient_preserve_weight": float(args.vertical_gradient_preserve_weight),
+        "vertical_context_mismatch_damping": float(args.vertical_context_mismatch_damping),
         "current_weight_boost": float(args.current_weight_boost),
         "context_weight_scale": float(args.context_weight_scale),
         "context_time_conf_power": float(args.context_time_conf_power),
@@ -791,6 +845,7 @@ def main() -> None:
         "output_md": str(md_path),
         "aggregate_csv": str(aggregate_csv_path),
         "aggregate_md": str(aggregate_md_path),
+        "stratified_eval": stratified_eval,
         "frame_times_file": str(frame_times_path),
         "baseline_stage4_output_dir": str(STRICT_STAGE4_OUTPUT_DIR),
     }

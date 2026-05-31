@@ -471,3 +471,100 @@ stage4_cma_fused_linear6min_demo_12w_20260527
 ```text
 请先阅读 /data/LFT-W02_data/pengxu/workflow/new_window_project_handover_20260529/centralized_v1_timepower15_full_handover.md 和 /data/LFT-W02_data/pengxu/stage/youhua.md。当前主线是 TimePower15 Stage4 full_v2 best adaptive 7395 帧全量结果；no-holdout 帧保留重构但不参与严格 RMSE/MAE；接下来优先改造 Excel->Parquet 脚本支持 location 19 sheet 并行转换，然后做分层评估、ROI 可视化和 PINN/Diffusion/CMA 弱背景残差优化。
 ```
+
+## 14. 2026-05-29 最新执行补丁
+
+### Stage4 结果是否符合要求
+
+符合当前验收口径：
+
+```text
+7395 frames
+strict_holdout_no_leakage 全真
+motion_used_as_wind 全假
+no-holdout 不进入官方 RMSE/MAE
+```
+
+官方指标必须引用：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_full_v2_best_adaptive_all_12w_20260529/stratified_eval/stage4_localization_sensitivity_stratified_aggregate.md
+```
+
+关键数值：
+
+```text
+eval_holdout_only: 5614 frames, RMSE/MAE 8.696082 / 7.652211 m/s
+multi_holdout_supported: 3926 frames, RMSE/MAE 7.882480 / 6.389791 m/s
+single_holdout_pressure_test: 1688 frames, RMSE/MAE 10.588383 / 10.588383 m/s
+no_holdout_unverified_reconstruction: 1781 frames, no official RMSE/MAE
+```
+
+参考：飞机风观测作为验证依据来自 WMO aircraft-based observations 体系；Mode-S/EHS 文献强调飞机派生风观测需要质控和误差分层，因此 no-holdout 不能混入主精度。WMO `https://wmo.int/aircraft-based-observations-programme`；AMT 2016 `https://amt.copernicus.org/articles/9/4141/2016/`。
+
+### 代表帧图件
+
+本轮已出图：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/baseline_visuals
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/vertical_risk_visuals
+```
+
+代表帧：
+
+```text
+20260217120000 low-error
+20260127110000 median-error
+20260209134200 near-6m/s
+20260129001800 high multi-holdout
+20260126003600 extreme single-holdout
+20260206191200 no-holdout high-risk
+```
+
+参考：PyDDA/3DVAR 风场反演实践强调可视化与约束诊断共同解释重构场。PyDDA `https://openradarscience.org/PyDDA/`。
+
+### 垂直风险代码补丁
+
+新增可选开关：
+
+```text
+--vertical-risk-mode preserve_strong_layers
+--vertical-gradient-preserve-weight
+--vertical-context-mismatch-damping
+```
+
+代码位置：
+
+```text
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+```
+
+原则：默认仍为 `off`；打开后只在强风/垂直失配/过平滑风险体素上减弱跨高度层扩散，并使用水平 4 邻域替代 6 邻域平滑，保护垂直梯度。代表帧测试中 holdout RMSE 基本不变，垂直风险计数没有稳定下降，因此不能作为默认主线，只能作为后续 200 帧/全量消融候选。参考：各向异性扩散用于保边平滑，PyDDA/3DVAR 使用平滑和物理约束但需保留真实梯度。Perona-Malik `https://doi.org/10.1109/34.56205`；PyDDA `https://openradarscience.org/PyDDA/`。
+
+### CMA/PINN/Diffusion manifest
+
+已生成：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest_cma_pinn_diffusion_20260529/centralized_training_manifest.json
+/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest_cma_pinn_diffusion_20260529/centralized_training_manifest.md
+```
+
+统计：
+
+```text
+7395 frames with Stage4 metrics
+7395 frames with raw CMA WIU/WIV time bracket
+773 raw CRA40 files indexed
+train/val/test = 5176/1109/1110
+```
+
+训练公式保持：
+
+```text
+F_pinn = F_timepower15 + delta_u/delta_v
+```
+
+CMA/CRA40 只做弱背景、条件输入、边界和物理约束；Diffusion 只在 PINN 后做局地残差、不确定性和低置信补全；正式验证仍只看飞机 holdout。参考：PINN `https://doi.org/10.1016/j.jcp.2018.10.045`；GenCast diffusion ensemble `https://www.nature.com/articles/s41586-024-08252-9`；CRA40 `https://doi.org/10.1007/s13351-023-2086-x`。

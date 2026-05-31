@@ -1452,3 +1452,97 @@ $$
 
 ## 19. 项目现状总结（一句话）
 本项目已完成TimePower15自适应方案12进程全量Stage4传统风场重构、分层评估体系、ROI可视化诊断、自适应角色冲突与垂直风险诊断模块；后续核心路线：以CMA为弱背景与模型条件输入，坚守飞机严格留一真值规则，在TimePower15主链路基础上叠加PINN、扩散模型，实现残差修正与不确定性评估，**不替换原有主链路**。
+
+---
+
+## 20. 2026-05-29 Stage4/CMA 最新补充
+
+### 20.1 TimePower15 全量结果复核
+
+Stage4 全量结果符合当前 strict holdout 要求：
+
+```text
+目录: /data/LFT-W02_data/pengxu/centralized_v1_output/stage4_full_v2_best_adaptive_all_12w_20260529
+帧数: 7395
+strict_holdout_no_leakage: true for all frames
+motion_used_as_wind: false for all frames
+```
+
+官方误差只看：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_full_v2_best_adaptive_all_12w_20260529/stratified_eval/stage4_localization_sensitivity_stratified_aggregate.md
+```
+
+核心指标：
+
+```text
+eval_holdout_only RMSE/MAE: 8.696082 / 7.652211 m/s
+weighted RMSE/MAE: 14.819533 / 6.724179 m/s
+multi_holdout_supported RMSE/MAE: 7.882480 / 6.389791 m/s
+single_holdout_pressure_test RMSE/MAE: 10.588383 / 10.588383 m/s
+no_holdout_unverified_reconstruction: 1781 frames, RMSE/MAE blank by design
+```
+
+依据：飞机风观测是本项目正式 truth，no-holdout 只做业务诊断。参考 WMO aircraft-based observations `https://wmo.int/aircraft-based-observations-programme` 和 Mode-S/EHS 风观测误差研究 `https://amt.copernicus.org/articles/9/4141/2016/`。
+
+### 20.2 代表帧可视化
+
+已生成 6 帧 baseline 与 vertical-risk candidate 对照图：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/baseline_visuals
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/vertical_risk_visuals
+```
+
+每套包含 6 张 slices PNG、6 张 diagnostics PNG、6 个 slice stats CSV。代表帧覆盖 low-error、median、6m/s边界、高误差多候选、极端单候选、no-holdout高风险。参考：PyDDA/3DVAR 约束风场反演需要同时审查场、约束和诊断，不应只看单一全局平均。PyDDA `https://openradarscience.org/PyDDA/`。
+
+### 20.3 垂直失配和过平滑修补
+
+代码补丁：
+
+```text
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+```
+
+新增参数：
+
+```text
+--vertical-risk-mode off|preserve_strong_layers
+--vertical-gradient-preserve-weight
+--vertical-context-mismatch-damping
+```
+
+默认值仍为 `off`。`preserve_strong_layers` 采用各向异性思路：强风/垂直失配/过平滑候选体素不再使用完整 6 邻域跨层平滑，而使用水平 4 邻域，并对高置信锚点回拉，避免跨高度层过度扩散。代表帧小样本没有稳定改善 RMSE 或垂直诊断，因此该补丁当前只是消融候选，不能作为主线默认。参考：Perona-Malik 各向异性扩散 `https://doi.org/10.1109/34.56205`；PyDDA/3DVAR 风场约束 `https://openradarscience.org/PyDDA/`。
+
+### 20.4 CMA/PINN/Diffusion manifest
+
+已启动 CMA 数据接入清单：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest_cma_pinn_diffusion_20260529/centralized_training_manifest.json
+/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest_cma_pinn_diffusion_20260529/centralized_training_manifest.md
+```
+
+统计：
+
+```text
+frames_total: 7395
+frames_with_stage4_metrics: 7395
+frames_with_cma_raw_wind_bracket: 7395
+cma_raw_file_count: 773
+cma_raw_wind_time_count: 129
+train/val/test: 5176/1109/1110
+```
+
+训练边界：
+
+```text
+CMA/CRA40 = 弱背景、条件输入、边界/物理约束，不是 truth
+PINN = F_timepower15 + delta_u/delta_v
+Diffusion = PINN 后的局地残差、不确定性、低置信补全
+正式验证 = aircraft holdout only
+```
+
+参考：PINN 物理约束神经网络 `https://doi.org/10.1016/j.jcp.2018.10.045`；GenCast 扩散集合天气预报与不确定性表达 `https://www.nature.com/articles/s41586-024-08252-9`；CRA40/CMA 再分析背景资料 `https://doi.org/10.1007/s13351-023-2086-x`。

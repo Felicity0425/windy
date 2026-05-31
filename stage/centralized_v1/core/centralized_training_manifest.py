@@ -14,8 +14,10 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +31,24 @@ if str(STAGE_DIR) not in sys.path:
 from stage.centralized_v1.core.centralized_stage4_ground_recon import _load_json  # noqa: E402
 
 
+CMA_FILENAME_RE = re.compile(r"CRA40_([A-Z0-9]+)_(\d{10})_")
+CMA_REQUIRED_WIND_CODES = ("WIU", "WIV")
+CMA_VAR_CODES = {
+    "GPH": "geopotential_height_gpm",
+    "RHU": "relative_humidity_percent",
+    "TEM": "temperature_k",
+    "VVP": "vertical_velocity_pa_s",
+    "WIU": "u_wind_mps",
+    "WIV": "v_wind_mps",
+}
+
 DEFAULT_LOSS_CONFIG = {
     "training_status": "manifest_only_not_trained",
+    "core_formula": "F_pinn = F_timepower15 + delta_u/delta_v; diffusion consumes F_pinn plus masks/confidence for local residual and uncertainty.",
     "target_policy": {
         "aircraft_holdout_labels": "strict validation/test labels; never used as dense truth",
         "stage4_sparse_reconstruction": "sparse prior or pseudo-target inside recon_mask_3d",
+        "cma_ra_or_cra40": "weak dense background, condition input, boundary/physics constraint; never formal truth",
         "cma_ra_virtual_radial_3dvar": "weak dense background/proxy target after collocation",
         "external_reanalysis_or_nwp": "weak/background field, not absolute truth",
     },
@@ -54,6 +69,10 @@ DEFAULT_LOSS_CONFIG = {
             "formula": "mean(||pred_u/v - CMA_or_NWP_background_u/v||^2)",
             "default_weight": 0.15,
         },
+        "timepower15_residual_regularization": {
+            "formula": "mean(recon_conf * ||delta_u/v||^2), where pred = TimePower15 + delta",
+            "default_weight": 0.20,
+        },
         "field_smoothness": {
             "formula": "mean(|grad_x/y/z pred_u|^2 + |grad_x/y/z pred_v|^2)",
             "default_weight": 0.05,
@@ -64,6 +83,14 @@ DEFAULT_LOSS_CONFIG = {
         },
         "vertical_wind_shear": {
             "formula": "mean(|d pred_u/dz|^2 + |d pred_v/dz|^2), optionally altitude-weighted",
+            "default_weight": 0.03,
+        },
+        "vertical_gradient_preservation": {
+            "formula": "penalize loss of strong observed/CMA-supported vertical gradients instead of smoothing them away",
+            "default_weight": 0.04,
+        },
+        "strong_layer_anti_oversmooth": {
+            "formula": "increase residual capacity or reduce smoothing weight where strong-layer oversmoothing diagnostics are positive",
             "default_weight": 0.03,
         },
         "boundary_background": {
@@ -79,6 +106,13 @@ DEFAULT_LOSS_CONFIG = {
         "pinn_or_proxy": "coordinate/time-conditioned network or neural field with physics losses",
         "diffusion": "conditional sparse-to-dense model; condition on aircraft anchors, Stage4 prior, CMA background/radial fields, radar/cloud context and masks",
     },
+    "references": [
+        "https://doi.org/10.1016/j.jcp.2018.10.045",
+        "https://openradarscience.org/PyDDA/",
+        "https://www.nature.com/articles/s41586-024-08252-9",
+        "https://doi.org/10.1109/34.56205",
+        "https://doi.org/10.1007/s13351-023-2086-x",
+    ],
 }
 
 
@@ -101,6 +135,90 @@ def _available_cma_proxy(proxy_dir: Path) -> dict[str, Path]:
         time_str = path.stem.replace("cma_ra_virtual_radial_3dvar_", "")
         out[time_str] = path
     return out
+
+
+def _index_cma_raw(cma_raw_dir: Path) -> tuple[dict[str, set[str]], dict[str, int]]:
+    index: dict[str, set[str]] = {}
+    counts: dict[str, int] = defaultdict(int)
+    if not cma_raw_dir.exists():
+        return index, dict(counts)
+    for path in cma_raw_dir.iterdir():
+        if not path.is_file():
+            continue
+        match = CMA_FILENAME_RE.search(path.name)
+        if not match:
+            continue
+        var_code, cma_time = match.groups()
+        if var_code not in CMA_VAR_CODES:
+            continue
+        index.setdefault(cma_time, set()).add(var_code)
+        counts[var_code] += 1
+    return index, dict(counts)
+
+
+def _parse_time_utc(time_str: str) -> datetime:
+    text = str(time_str)
+    if len(text) == 14:
+        return datetime.strptime(text, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    if len(text) == 10:
+        return datetime.strptime(text, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+    raise ValueError(f"Unsupported time_str: {time_str}")
+
+
+def _bracket_cma_raw_time(
+    frame_time: str,
+    cma_raw_index: dict[str, set[str]],
+    max_window_hours: float,
+) -> dict[str, Any]:
+    target = _parse_time_utc(frame_time)
+    available = sorted(
+        time_str
+        for time_str, var_codes in cma_raw_index.items()
+        if all(code in var_codes for code in CMA_REQUIRED_WIND_CODES)
+    )
+    parsed = [(time_str, _parse_time_utc(time_str)) for time_str in available]
+    previous = [(time_str, dt) for time_str, dt in parsed if dt <= target]
+    following = [(time_str, dt) for time_str, dt in parsed if dt >= target]
+    if not previous or not following:
+        return {
+            "has_cma_raw_wind_bracket": False,
+            "cma_raw_time_t0": "",
+            "cma_raw_time_t1": "",
+            "cma_raw_alpha": "",
+            "cma_raw_delta_hours_from_t0": "",
+            "cma_raw_delta_hours_to_t1": "",
+            "cma_raw_bracket_hours": "",
+            "cma_raw_vars_t0": "",
+            "cma_raw_vars_t1": "",
+        }
+    t0_str, t0_dt = max(previous, key=lambda item: item[1])
+    t1_str, t1_dt = min(following, key=lambda item: item[1])
+    window_hours = (t1_dt - t0_dt).total_seconds() / 3600.0
+    if window_hours > float(max_window_hours):
+        return {
+            "has_cma_raw_wind_bracket": False,
+            "cma_raw_time_t0": t0_str,
+            "cma_raw_time_t1": t1_str,
+            "cma_raw_alpha": "",
+            "cma_raw_delta_hours_from_t0": "",
+            "cma_raw_delta_hours_to_t1": "",
+            "cma_raw_bracket_hours": float(window_hours),
+            "cma_raw_vars_t0": ",".join(sorted(cma_raw_index.get(t0_str, set()))),
+            "cma_raw_vars_t1": ",".join(sorted(cma_raw_index.get(t1_str, set()))),
+        }
+    denom = max(1.0, (t1_dt - t0_dt).total_seconds())
+    alpha = 0.0 if t0_dt == t1_dt else (target - t0_dt).total_seconds() / denom
+    return {
+        "has_cma_raw_wind_bracket": True,
+        "cma_raw_time_t0": t0_str,
+        "cma_raw_time_t1": t1_str,
+        "cma_raw_alpha": float(max(0.0, min(1.0, alpha))),
+        "cma_raw_delta_hours_from_t0": float((target - t0_dt).total_seconds() / 3600.0),
+        "cma_raw_delta_hours_to_t1": float((t1_dt - target).total_seconds() / 3600.0),
+        "cma_raw_bracket_hours": float(window_hours),
+        "cma_raw_vars_t0": ",".join(sorted(cma_raw_index.get(t0_str, set()))),
+        "cma_raw_vars_t1": ",".join(sorted(cma_raw_index.get(t1_str, set()))),
+    }
 
 
 def _split_frames(frame_times: list[str], train_fraction: float, val_fraction: float) -> dict[str, str]:
@@ -135,6 +253,8 @@ def _write_md(path: Path, manifest: dict[str, Any]) -> None:
         f"- test frames: `{counts.get('test', 0)}`",
         f"- frames with Stage4 metrics: `{manifest['frames_with_stage4_metrics']}`",
         f"- frames with CMA proxy NPZ: `{manifest['frames_with_cma_proxy']}`",
+        f"- frames with raw CMA wind bracket: `{manifest['frames_with_cma_raw_wind_bracket']}`",
+        f"- raw CMA wind times: `{manifest['cma_raw_wind_time_count']}`",
         "",
         "## Training Boundary",
         "",
@@ -155,14 +275,17 @@ def _write_md(path: Path, manifest: dict[str, Any]) -> None:
             "",
             "## Frame Table",
             "",
-            "| split | time | stage2 npz | stage4 metrics | cma proxy |",
-            "| --- | --- | --- | --- | --- |",
+            "| split | time | stage2 npz | stage4 metrics | cma proxy | raw CMA bracket |",
+            "| --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in manifest["frames"]:
+        bracket = ""
+        if row.get("has_cma_raw_wind_bracket"):
+            bracket = f"{row.get('cma_raw_time_t0')}->{row.get('cma_raw_time_t1')} alpha={float(row.get('cma_raw_alpha', 0.0)):.3f}"
         lines.append(
             f"| `{row['split']}` | `{row['time_str']}` | `{row['stage2_npz']}` | "
-            f"`{row['has_stage4_metrics']}` | `{row['cma_proxy_npz']}` |"
+            f"`{row['has_stage4_metrics']}` | `{row['cma_proxy_npz']}` | `{bracket}` |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -170,17 +293,25 @@ def _write_md(path: Path, manifest: dict[str, Any]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build a strict training manifest for PINN/proxy and diffusion experiments.")
     parser.add_argument("--stage2-summary", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage2_full_v2/stage2_multimodal_summary.json"))
-    parser.add_argument("--stage4-csv", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_full_v2_validation_200_8w/role_conflict_timepower15_12w/stage4_localization_sensitivity.csv"))
+    parser.add_argument("--stage4-csv", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_full_v2_best_adaptive_all_12w_20260529/stage4_localization_sensitivity.csv"))
+    parser.add_argument("--cma-raw-dir", type=Path, default=Path("/data/LFT-W02_data/pengxu/cma"))
     parser.add_argument("--cma-proxy-dir", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/cma_ra_virtual_radial_3dvar"))
     parser.add_argument("--out-dir", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest"))
     parser.add_argument("--train-fraction", type=float, default=0.70)
     parser.add_argument("--val-fraction", type=float, default=0.15)
+    parser.add_argument("--cma-max-linear-window-hours", type=float, default=6.1)
     parser.add_argument("--require-stage4-metrics", action="store_true")
     args = parser.parse_args()
 
     stage2_rows = _load_json(args.stage2_summary)
     stage4_times = _stage4_time_set(args.stage4_csv)
     cma_proxy = _available_cma_proxy(args.cma_proxy_dir)
+    cma_raw_index, cma_raw_counts = _index_cma_raw(args.cma_raw_dir)
+    cma_raw_wind_times = [
+        time_str
+        for time_str, var_codes in cma_raw_index.items()
+        if all(code in var_codes for code in CMA_REQUIRED_WIND_CODES)
+    ]
     candidates = []
     for row in stage2_rows:
         time_str = str(row["time_str"])
@@ -198,6 +329,7 @@ def main() -> None:
                 "stage2_npz": str(row.get("multimodal_vox_path", "")),
                 "has_stage4_metrics": time_str in stage4_times,
                 "cma_proxy_npz": str(cma_proxy.get(time_str, "")),
+                **_bracket_cma_raw_time(time_str, cma_raw_index, float(args.cma_max_linear_window_hours)),
                 "wind_voxels": int(row.get("wind_voxels", 0)),
                 "context_wind_voxels": int(row.get("context_wind_voxels", 0)),
                 "traj_voxels": int(row.get("traj_voxels", 0)),
@@ -209,10 +341,15 @@ def main() -> None:
     manifest = {
         "stage2_summary": str(args.stage2_summary),
         "stage4_csv": str(args.stage4_csv),
+        "cma_raw_dir": str(args.cma_raw_dir),
         "cma_proxy_dir": str(args.cma_proxy_dir),
+        "cma_raw_file_count": int(sum(cma_raw_counts.values())),
+        "cma_raw_file_counts_by_var": cma_raw_counts,
+        "cma_raw_wind_time_count": len(cma_raw_wind_times),
         "frames_total": len(frames),
         "frames_with_stage4_metrics": sum(1 for row in frames if row["has_stage4_metrics"]),
         "frames_with_cma_proxy": sum(1 for row in frames if row["cma_proxy_npz"]),
+        "frames_with_cma_raw_wind_bracket": sum(1 for row in frames if row["has_cma_raw_wind_bracket"]),
         "split_counts": dict(split_counts),
         "loss_config": DEFAULT_LOSS_CONFIG,
         "frames": frames,

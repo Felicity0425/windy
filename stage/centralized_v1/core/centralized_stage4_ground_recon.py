@@ -68,6 +68,7 @@ LOCALIZATION_KERNELS = {"gaussian", "gaspari_cohn"}
 CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted"}
 PHYSICS_CONSTRAINT_MODES = {"proxy", "pydda_3dvar_proxy"}
 ROLE_CONFLICT_MODES = {"off", "current_priority", "current_priority_adaptive"}
+VERTICAL_RISK_MODES = {"off", "preserve_strong_layers"}
 CMA_FUSION_MODES = {"off", "cma_proxy_background", "cma_reanalysis_background", "cma_pseudo_observation"}
 CMA_CONFIDENCE_SOURCES = {"dense", "coverage_conf", "temporal_conf", "coverage_temporal_conf"}
 CMA_PSEUDO_SOURCES = {"reanalysis", "proxy"}
@@ -107,10 +108,14 @@ DEFAULT_QC_CALIBRATION = {
     "role_conflict_adaptive_current_density_factor_reduction": 0.15,
     "role_conflict_adaptive_min_context_factor": 0.05,
     "role_conflict_adaptive_max_context_factor": 0.80,
+    "vertical_risk_gradient_preserve_weight": 0.12,
+    "vertical_risk_context_mismatch_damping": 0.35,
     "references": [
         "https://amt.copernicus.org/articles/18/3341/2025/",
         "https://amt.copernicus.org/articles/9/4141/2016/",
         "https://wmo.int/aircraft-based-observations-programme",
+        "https://openradarscience.org/PyDDA/",
+        "https://doi.org/10.1109/34.56205",
     ],
 }
 
@@ -921,6 +926,16 @@ def _neighbor_mean_3d(field: np.ndarray) -> np.ndarray:
     ) / 6.0
 
 
+def _horizontal_neighbor_mean_3d(field: np.ndarray) -> np.ndarray:
+    pad = np.pad(field, ((0, 0), (1, 1), (1, 1)), mode="edge")
+    return (
+        pad[:, 1:-1, :-2]
+        + pad[:, 1:-1, 2:]
+        + pad[:, :-2, 1:-1]
+        + pad[:, 2:, 1:-1]
+    ) / 4.0
+
+
 def _neighbor_mean_masked(field: np.ndarray, mask: np.ndarray) -> np.ndarray:
     values = field * mask.astype(np.float32)
     pad_values = np.pad(values, ((1, 1), (1, 1), (1, 1)), mode="constant", constant_values=0.0)
@@ -956,6 +971,9 @@ def _pinn_diffusion_refine(
     physics_constraint_mode: str = "proxy",
     observation_anchor_weight: float = 0.10,
     speed_limit_mps: float = 120.0,
+    vertical_risk_mode: str = "off",
+    vertical_gradient_preserve_weight: float = 0.12,
+    vertical_context_mismatch_damping: float = 0.35,
 ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
     """Proxy refinement: smooth/propagate low-confidence gaps without hold-out labels.
 
@@ -970,7 +988,15 @@ def _pinn_diffusion_refine(
             f"Unsupported physics_constraint_mode={physics_constraint_mode}; "
             f"choose {sorted(PHYSICS_CONSTRAINT_MODES)}"
         )
+    vertical_risk_mode = str(vertical_risk_mode)
+    if vertical_risk_mode not in VERTICAL_RISK_MODES:
+        raise ValueError(
+            f"Unsupported vertical_risk_mode={vertical_risk_mode}; "
+            f"choose {sorted(VERTICAL_RISK_MODES)}"
+        )
     iterations = max(0, int(iterations))
+    vertical_preserve_w = float(np.clip(vertical_gradient_preserve_weight, 0.0, 1.0))
+    vertical_context_damping = float(np.clip(vertical_context_mismatch_damping, 0.0, 1.0))
     if iterations == 0:
         return recon, {
             "pinn_diffusion_refine_enabled": 0.0,
@@ -981,6 +1007,13 @@ def _pinn_diffusion_refine(
             "diffusion_fill_new_voxels": 0.0,
             "speed_limit_mps": float(speed_limit_mps),
             "observation_anchor_weight": float(observation_anchor_weight),
+            "vertical_risk_mode": vertical_risk_mode,
+            "vertical_gradient_preserve_weight": float(vertical_preserve_w),
+            "vertical_context_mismatch_damping": float(vertical_context_damping),
+            "vertical_risk_refine_enabled": 0.0,
+            "vertical_risk_candidate_voxels_last": 0.0,
+            "vertical_oversmooth_preserve_voxels_last": 0.0,
+            "vertical_context_mismatch_damped_voxels_last": 0.0,
         }
 
     u = recon["recon_u"].astype(np.float32).copy()
@@ -1000,6 +1033,9 @@ def _pinn_diffusion_refine(
 
     last_div = 0.0
     last_smooth = 0.0
+    last_vertical_risk = 0
+    last_vertical_oversmooth = 0
+    last_vertical_context = 0
     for _ in range(iterations):
         u_mean = _neighbor_mean_3d(u)
         v_mean = _neighbor_mean_3d(v)
@@ -1012,6 +1048,31 @@ def _pinn_diffusion_refine(
         low_conf = np.clip(1.0 - conf, 0.0, 1.0)
         update_gain = np.clip(diff_w * low_conf + smooth_w, 0.0, 0.65).astype(np.float32)
         preserve = np.where(source_mask, source_preserve, 0.0).astype(np.float32)
+        vertical_oversmooth_mask = np.zeros_like(conf, dtype=bool)
+        vertical_context_mask = np.zeros_like(conf, dtype=bool)
+        vertical_risk_mask = np.zeros_like(conf, dtype=bool)
+        if vertical_risk_mode == "preserve_strong_layers":
+            speed = np.sqrt(u**2 + v**2).astype(np.float32)
+            vertical_jump = _vertical_jump_field(u, v)
+            vertical_neighbor_mean, _ = _vertical_neighbor_speed_stats(u, v)
+            active_mask = conf > EFFECTIVE_CONF_THRESHOLD
+            strong_mask = active_mask & (speed >= STRONG_WIND_DIAGNOSTIC_THRESHOLD_MPS)
+            vertical_oversmooth_mask = strong_mask & (vertical_jump <= VERTICAL_OVERSMOOTH_JUMP_THRESHOLD_MPS)
+            vertical_context_mask = strong_mask & (
+                np.abs(speed - vertical_neighbor_mean) >= RAPID_VERTICAL_JUMP_DIAGNOSTIC_THRESHOLD_MPS
+            )
+            vertical_risk_mask = vertical_oversmooth_mask | vertical_context_mask
+            if np.any(vertical_risk_mask) and vertical_context_damping > 0.0:
+                update_gain = np.where(
+                    vertical_risk_mask,
+                    update_gain * np.float32(1.0 - vertical_context_damping),
+                    update_gain,
+                ).astype(np.float32)
+            if np.any(vertical_risk_mask):
+                u_mean_horizontal = _horizontal_neighbor_mean_3d(u)
+                v_mean_horizontal = _horizontal_neighbor_mean_3d(v)
+                u_mean = np.where(vertical_risk_mask, u_mean_horizontal, u_mean).astype(np.float32)
+                v_mean = np.where(vertical_risk_mask, v_mean_horizontal, v_mean).astype(np.float32)
 
         candidate_u = u + update_gain * (u_mean - u) - div_w * div_grad_x
         candidate_v = v + update_gain * (v_mean - v) - div_w * div_grad_y
@@ -1027,12 +1088,38 @@ def _pinn_diffusion_refine(
             speed_scale = np.minimum(1.0, speed_limit_mps / np.maximum(candidate_speed, 1e-6)).astype(np.float32)
             candidate_u = candidate_u * speed_scale
             candidate_v = candidate_v * speed_scale
+        if vertical_risk_mode == "preserve_strong_layers" and np.any(vertical_risk_mask):
+            preserve_weight = (vertical_preserve_w * np.clip(conf, 0.0, 1.0)).astype(np.float32)
+            context_weight = (vertical_context_damping * np.clip(conf, 0.0, 1.0)).astype(np.float32)
+            candidate_u = np.where(
+                vertical_oversmooth_mask,
+                (1.0 - preserve_weight) * candidate_u + preserve_weight * anchor_u,
+                candidate_u,
+            ).astype(np.float32)
+            candidate_v = np.where(
+                vertical_oversmooth_mask,
+                (1.0 - preserve_weight) * candidate_v + preserve_weight * anchor_v,
+                candidate_v,
+            ).astype(np.float32)
+            candidate_u = np.where(
+                vertical_context_mask,
+                (1.0 - context_weight) * candidate_u + context_weight * anchor_u,
+                candidate_u,
+            ).astype(np.float32)
+            candidate_v = np.where(
+                vertical_context_mask,
+                (1.0 - context_weight) * candidate_v + context_weight * anchor_v,
+                candidate_v,
+            ).astype(np.float32)
         u = preserve * u + (1.0 - preserve) * candidate_u
         v = preserve * v + (1.0 - preserve) * candidate_v
         conf = np.maximum(conf, np.clip(conf_mean * fill_w, 0.0, 0.45).astype(np.float32))
 
         last_div = float(np.mean(np.abs(div)))
         last_smooth = float(np.mean(np.sqrt((u_mean - u) ** 2 + (v_mean - v) ** 2)))
+        last_vertical_risk = int(np.count_nonzero(vertical_risk_mask))
+        last_vertical_oversmooth = int(np.count_nonzero(vertical_oversmooth_mask))
+        last_vertical_context = int(np.count_nonzero(vertical_context_mask))
 
     mask = conf > EFFECTIVE_CONF_THRESHOLD
     conf = np.where(mask, conf, 0.0).astype(np.float32)
@@ -1057,6 +1144,13 @@ def _pinn_diffusion_refine(
         "source_preserve": float(source_preserve),
         "observation_anchor_weight": float(anchor_w),
         "speed_limit_mps": float(speed_limit_mps),
+        "vertical_risk_mode": vertical_risk_mode,
+        "vertical_gradient_preserve_weight": float(vertical_preserve_w),
+        "vertical_context_mismatch_damping": float(vertical_context_damping),
+        "vertical_risk_refine_enabled": 1.0 if vertical_risk_mode != "off" else 0.0,
+        "vertical_risk_candidate_voxels_last": float(last_vertical_risk),
+        "vertical_oversmooth_preserve_voxels_last": float(last_vertical_oversmooth),
+        "vertical_context_mismatch_damped_voxels_last": float(last_vertical_context),
     }
 
 
@@ -1899,6 +1993,9 @@ def process_frame(
     physics_constraint_mode: str,
     observation_anchor_weight: float,
     speed_limit_mps: float,
+    vertical_risk_mode: str,
+    vertical_gradient_preserve_weight: float,
+    vertical_context_mismatch_damping: float,
     current_weight_boost: float,
     context_weight_scale: float,
     context_time_conf_power: float,
@@ -2000,6 +2097,9 @@ def process_frame(
         physics_constraint_mode=physics_constraint_mode,
         observation_anchor_weight=observation_anchor_weight,
         speed_limit_mps=speed_limit_mps,
+        vertical_risk_mode=vertical_risk_mode,
+        vertical_gradient_preserve_weight=vertical_gradient_preserve_weight,
+        vertical_context_mismatch_damping=vertical_context_mismatch_damping,
     )
     recon = _finalize_effective_reconstruction(recon)
     point_rows = _point_eval_rows(holdout_wind, recon["recon_u"], recon["recon_v"], recon["recon_conf"], observations, acc)
@@ -2049,6 +2149,9 @@ def process_frame(
         "physics_constraint_mode": str(physics_constraint_mode),
         "observation_anchor_weight": float(observation_anchor_weight),
         "speed_limit_mps": float(speed_limit_mps),
+        "vertical_risk_mode": str(vertical_risk_mode),
+        "vertical_gradient_preserve_weight": float(vertical_gradient_preserve_weight),
+        "vertical_context_mismatch_damping": float(vertical_context_mismatch_damping),
         "current_weight_boost": float(current_weight_boost),
         "context_weight_scale": float(context_weight_scale),
         "context_time_conf_power": float(context_time_conf_power),
@@ -2159,6 +2262,9 @@ def process_frame(
         "confidence_mode": str(confidence_mode),
         "localization_kernel": str(localization_kernel),
         "physics_constraint_mode": str(physics_constraint_mode),
+        "vertical_risk_mode": str(vertical_risk_mode),
+        "vertical_gradient_preserve_weight": float(vertical_gradient_preserve_weight),
+        "vertical_context_mismatch_damping": float(vertical_context_mismatch_damping),
         "current_weight_boost": float(current_weight_boost),
         "context_weight_scale": float(context_weight_scale),
         "context_time_conf_power": float(context_time_conf_power),
@@ -2261,6 +2367,12 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.observation_anchor_weight),
             "--speed-limit-mps",
             str(args.speed_limit_mps),
+            "--vertical-risk-mode",
+            str(args.vertical_risk_mode),
+            "--vertical-gradient-preserve-weight",
+            str(args.vertical_gradient_preserve_weight),
+            "--vertical-context-mismatch-damping",
+            str(args.vertical_context_mismatch_damping),
             "--current-weight-boost",
             str(args.current_weight_boost),
             "--context-weight-scale",
@@ -2348,6 +2460,9 @@ def main() -> None:
     parser.add_argument("--physics-constraint-mode", choices=sorted(PHYSICS_CONSTRAINT_MODES), default="proxy")
     parser.add_argument("--observation-anchor-weight", type=float, default=0.10)
     parser.add_argument("--speed-limit-mps", type=float, default=120.0)
+    parser.add_argument("--vertical-risk-mode", choices=sorted(VERTICAL_RISK_MODES), default="off")
+    parser.add_argument("--vertical-gradient-preserve-weight", type=float, default=float(DEFAULT_QC_CALIBRATION["vertical_risk_gradient_preserve_weight"]))
+    parser.add_argument("--vertical-context-mismatch-damping", type=float, default=float(DEFAULT_QC_CALIBRATION["vertical_risk_context_mismatch_damping"]))
     parser.add_argument("--current-weight-boost", type=float, default=1.0)
     parser.add_argument("--context-weight-scale", type=float, default=1.0)
     parser.add_argument("--context-time-conf-power", type=float, default=1.0)
@@ -2418,6 +2533,9 @@ def main() -> None:
                 physics_constraint_mode=str(args.physics_constraint_mode),
                 observation_anchor_weight=float(args.observation_anchor_weight),
                 speed_limit_mps=float(args.speed_limit_mps),
+                vertical_risk_mode=str(args.vertical_risk_mode),
+                vertical_gradient_preserve_weight=float(args.vertical_gradient_preserve_weight),
+                vertical_context_mismatch_damping=float(args.vertical_context_mismatch_damping),
                 current_weight_boost=float(args.current_weight_boost),
                 context_weight_scale=float(args.context_weight_scale),
                 context_time_conf_power=float(args.context_time_conf_power),

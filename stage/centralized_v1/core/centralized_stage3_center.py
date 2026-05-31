@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import subprocess
 import sys
@@ -39,22 +38,20 @@ from stage.centralized_v1.configs.centralized_v1_contract import (
     C2_TIME_STR,
     C2_TIMESTAMP_UTC,
     C2_WIND_RECORDS,
-    C3_AGENT_ALT,
-    C3_AGENT_DISTANCE_KM,
     C3_AGENT_IDS,
     C3_AGENT_JOINT_CONF,
-    C3_AGENT_LAT,
-    C3_AGENT_LON,
     C3_AGENT_SPACE_CONF,
     C3_AGENT_TIME_CONF,
-    C3_AGENT_TO_CENTER_ALLOWED,
-    C3_AGENT_DELTA_TIME_MIN,
     C3_ALPHA,
     C3_BETA,
     C3_CENTER_ACTIVE,
     C3_TIME_STR,
     C3_TIMESTAMP_UTC,
     C3_VOX_PATH,
+)
+from stage.centralized_v1.core.centralized_agents_builder import (
+    build_ground_center_agents,
+    empty_ground_center_agents,
 )
 
 
@@ -131,111 +128,30 @@ def _record_group(key: str, role: str, records: list[dict[str, Any]]) -> dict[st
     }
 
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1 = math.radians(float(lat1))
-    p2 = math.radians(float(lat2))
-    dphi = math.radians(float(lat2) - float(lat1))
-    dlambda = math.radians(float(lon2) - float(lon1))
-    a = math.sin(dphi / 2.0) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2.0) ** 2
-    return 2.0 * r * math.asin(min(1.0, math.sqrt(a)))
-
-
-def _eval_agents(flight_df: pl.DataFrame, target_time: Any, alpha: float) -> dict[str, Any]:
-    if len(flight_df) == 0 or "flight_id" not in flight_df.columns:
-        return {
-            C3_AGENT_IDS: [],
-            C3_AGENT_LAT: [],
-            C3_AGENT_LON: [],
-            C3_AGENT_ALT: [],
-            C3_AGENT_DELTA_TIME_MIN: [],
-            C3_AGENT_DISTANCE_KM: [],
-            C3_AGENT_TIME_CONF: [],
-            C3_AGENT_SPACE_CONF: [],
-            C3_AGENT_JOINT_CONF: [],
-            C3_AGENT_TO_CENTER_ALLOWED: [],
-            "agent_virtual_flight_count": 0,
-            "agent_virtual_record_count": 0,
-        }
-    virtual_ids: set[str] = set()
-    virtual_record_count = 0
-    if "flight_id_is_virtual" in flight_df.columns:
-        virtual_df = flight_df.filter(pl.col("flight_id_is_virtual") == True)
-        virtual_record_count = int(len(virtual_df))
-        if len(virtual_df) > 0:
-            virtual_ids = {str(v) for v in virtual_df["flight_id"].drop_nulls().to_list()}
-    groups = flight_df.group_by("flight_id").agg(
-        [
-            pl.col("lat_clean").median().alias("lat"),
-            pl.col("lon_clean").median().alias("lon"),
-            pl.col("alt_meters").median().alias("alt"),
-            pl.col("time_utc").max().alias("time_utc"),
-        ]
-    )
-    if len(groups) == 0:
-        return {
-            C3_AGENT_IDS: [],
-            C3_AGENT_LAT: [],
-            C3_AGENT_LON: [],
-            C3_AGENT_ALT: [],
-            C3_AGENT_DELTA_TIME_MIN: [],
-            C3_AGENT_DISTANCE_KM: [],
-            C3_AGENT_TIME_CONF: [],
-            C3_AGENT_SPACE_CONF: [],
-            C3_AGENT_JOINT_CONF: [],
-            C3_AGENT_TO_CENTER_ALLOWED: [],
-            "agent_virtual_flight_count": 0,
-            "agent_virtual_record_count": int(virtual_record_count),
-        }
-    lat_vals = groups["lat"].to_numpy()
-    lon_vals = groups["lon"].to_numpy()
-    alt_vals = groups["alt"].to_numpy()
-    center_lat = float(np.median(lat_vals)) if len(lat_vals) else 0.0
-    center_lon = float(np.median(lon_vals)) if len(lon_vals) else 0.0
-    time_vals = groups["time_utc"].to_list()
-    if target_time is not None:
-        target = target_time
-    else:
-        target = max(time_vals)
-    out = {
-        C3_AGENT_IDS: [],
-        C3_AGENT_LAT: [],
-        C3_AGENT_LON: [],
-        C3_AGENT_ALT: [],
-        C3_AGENT_DELTA_TIME_MIN: [],
-        C3_AGENT_DISTANCE_KM: [],
-        C3_AGENT_TIME_CONF: [],
-        C3_AGENT_SPACE_CONF: [],
-        C3_AGENT_JOINT_CONF: [],
-        C3_AGENT_TO_CENTER_ALLOWED: [],
-    }
-    for row in groups.to_dicts():
-        dt_min = abs((row["time_utc"] - target).total_seconds()) / 60.0 if row["time_utc"] is not None else 0.0
-        dist_km = _haversine_km(row["lat"], row["lon"], center_lat, center_lon)
-        c_time = math.exp(-alpha * dt_min)
-        c_space = 1.0
-        c_joint = c_time
-        out[C3_AGENT_IDS].append(str(row["flight_id"]))
-        out[C3_AGENT_LAT].append(float(row["lat"]))
-        out[C3_AGENT_LON].append(float(row["lon"]))
-        out[C3_AGENT_ALT].append(float(row["alt"]))
-        out[C3_AGENT_DELTA_TIME_MIN].append(float(dt_min))
-        out[C3_AGENT_DISTANCE_KM].append(float(dist_km))
-        out[C3_AGENT_TIME_CONF].append(float(c_time))
-        out[C3_AGENT_SPACE_CONF].append(float(c_space))
-        out[C3_AGENT_JOINT_CONF].append(float(c_joint))
-        out[C3_AGENT_TO_CENTER_ALLOWED].append(1.0)
-    out["agent_virtual_flight_count"] = int(sum(1 for fid in out[C3_AGENT_IDS] if fid in virtual_ids))
-    out["agent_virtual_record_count"] = int(virtual_record_count)
-    return out
-
-
-def process_frame(row: dict[str, Any], alpha: float, out_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def process_frame(row: dict[str, Any], alpha: float, out_dir: Path, agent_mode: str = "none") -> tuple[dict[str, Any], dict[str, Any]]:
     npz = _load_npz(Path(row["multimodal_vox_path"]))
     meta = json.loads(str(npz[C2_MULTIMODAL_META_JSON])) if C2_MULTIMODAL_META_JSON in npz else {}
     flight_df = _to_df(npz[C2_FLIGHT_RAW_RECORDS])
     target_time = _parse_timestamp(npz[C2_TIMESTAMP_UTC])
-    agents = _eval_agents(flight_df, target_time, alpha)
+    reference_center = {
+        "lat": meta.get("reference_center_lat"),
+        "lon": meta.get("reference_center_lon"),
+        "alt_m": meta.get("reference_center_alt_m"),
+        "source": meta.get("reference_center_source", "stage2_reference_center"),
+    }
+    if agent_mode == "diagnostic":
+        agents = build_ground_center_agents(
+            flight_df,
+            target_time,
+            alpha,
+            reference_center=reference_center,
+        )
+        agent_builder_enabled = True
+    else:
+        agents = empty_ground_center_agents(reference_center)
+        agents["agent_builder"] = "disabled"
+        agents["agent_builder_role"] = "disabled_mainline_payload_only_no_agent_construction"
+        agent_builder_enabled = False
     label_records = _records(npz[C2_WIND_RECORDS]) if C2_WIND_RECORDS in npz else []
     context_wind_records = _records(npz[C2_CONTEXT_WIND_RECORDS]) if C2_CONTEXT_WIND_RECORDS in npz else []
     context_motion_records = _records(npz[C2_CONTEXT_MOTION_RECORDS]) if C2_CONTEXT_MOTION_RECORDS in npz else []
@@ -270,6 +186,18 @@ def process_frame(row: dict[str, Any], alpha: float, out_dir: Path) -> tuple[dic
             "target_voxel_localization_deferred_to_stage4": True,
             "stage4_localization_policy": "Stage4 should compute spatial localization from observation voxel to target voxel, e.g. Gaussian or Gaspari-Cohn style.",
         },
+        "agent_builder_package": {
+            "agent_mode": agent_mode,
+            "agent_builder_enabled": agent_builder_enabled,
+            "agent_builder": agents.get("agent_builder"),
+            "agent_builder_role": agents.get("agent_builder_role"),
+            "all_agents_downlinked": True,
+            "no_air_to_air": True,
+            "motion_used_as_wind": False,
+            "center_downlink_edge_count": len(agents.get("center_downlink_src", [])),
+            "reference_center_source": agents.get("agent_reference_center_source"),
+            "reference_center_used_for_weighting": False,
+        },
         "stage2_metadata_excerpt": {
             "stage2_role": meta.get("stage2_role"),
             "all_in_observations": meta.get("all_in_observations"),
@@ -296,6 +224,8 @@ def process_frame(row: dict[str, Any], alpha: float, out_dir: Path) -> tuple[dic
         "no_comm_distance_filter": True,
         "stage3_space_conf_mode": "neutral_logical_ground_center",
         "stage4_target_voxel_localization_deferred": True,
+        "agent_mode": agent_mode,
+        "agent_builder_enabled": agent_builder_enabled,
         "deprecated_ff_fields": {
             "ff_comm_allowed": [],
             "ff_wind_allowed": [],
@@ -315,6 +245,16 @@ def process_frame(row: dict[str, Any], alpha: float, out_dir: Path) -> tuple[dic
         "agent_time_conf_mean": float(np.mean(agents[C3_AGENT_TIME_CONF])) if agents[C3_AGENT_TIME_CONF] else 0.0,
         "agent_space_conf_mean": float(np.mean(agents[C3_AGENT_SPACE_CONF])) if agents[C3_AGENT_SPACE_CONF] else 0.0,
         "agent_joint_conf_mean": float(np.mean(agents[C3_AGENT_JOINT_CONF])) if agents[C3_AGENT_JOINT_CONF] else 0.0,
+        "agent_mode": agent_mode,
+        "agent_builder_enabled": agent_builder_enabled,
+        "agent_builder": agents.get("agent_builder"),
+        "agent_builder_role": agents.get("agent_builder_role"),
+        "agent_record_count_total": int(sum(agents.get("agent_record_count", []))),
+        "agent_voxel_count_total": int(sum(agents.get("agent_voxel_count", []))),
+        "agent_virtual_flight_count": int(agents.get("agent_virtual_flight_count", 0)),
+        "agent_virtual_record_count": int(agents.get("agent_virtual_record_count", 0)),
+        "center_downlink_edge_count": len(agents.get("center_downlink_src", [])),
+        "agent_reference_center_source": agents.get("agent_reference_center_source"),
         "all_agents_downlinked": True,
         "no_air_to_air": True,
         "no_comm_distance_filter": True,
@@ -427,6 +367,8 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(frame_file),
             "--alpha",
             str(args.alpha),
+            "--agent-mode",
+            str(args.agent_mode),
             "--num-workers",
             str(workers),
             "--shard-id",
@@ -474,6 +416,12 @@ def main() -> None:
     parser.add_argument("--frame-times-file", type=Path)
     parser.add_argument("--out-dir", type=Path, default=STAGE3_OUTPUT_DIR)
     parser.add_argument("--alpha", type=float, default=TIME_CONF_ALPHA)
+    parser.add_argument(
+        "--agent-mode",
+        choices=("none", "diagnostic"),
+        default="none",
+        help="none keeps Stage3 as payload-only; diagnostic builds optional Ground Center agent diagnostics.",
+    )
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--shard-id", type=int, default=-1)
     parser.add_argument("--shard-summary", type=Path)
@@ -498,7 +446,7 @@ def main() -> None:
     progress_total = int(args.progress_total) if int(args.progress_total) > 0 else len(rows)
     _write_progress(args.progress_file, completed=0, total=progress_total, shard_id=int(args.shard_id), status="running")
     for idx, row in enumerate(rows, start=1):
-        _, summary = process_frame(row, float(args.alpha), args.out_dir)
+        _, summary = process_frame(row, float(args.alpha), args.out_dir, agent_mode=str(args.agent_mode))
         summary["num_workers"] = int(args.num_workers)
         summary["parallel_mode"] = "shard_subprocess" if int(args.num_workers) > 1 else "single_process"
         summary["shard_id"] = int(args.shard_id)

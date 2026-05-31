@@ -1092,3 +1092,123 @@ Pangu / FengWu / FuXi / GraphCast / GenCast:
    TimePower15 主干 + CMA 条件 + PINN 残差 + Diffusion 不确定性
    + aircraft strict holdout 最终验证。
 ```
+
+## 17. 2026-05-29 Stage4 结果复盘、垂直风险补丁与 CMA 启动
+
+### 17.1 Stage4 TimePower15 分层结论
+
+当前全量结果目录：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_full_v2_best_adaptive_all_12w_20260529
+```
+
+验收结论：
+
+```text
+总帧数: 7395
+strict_holdout_no_leakage: 全真
+motion_used_as_wind: 全假
+no-holdout: 不进入官方 RMSE/MAE
+```
+
+官方指标只看 `eval_holdout_only`：
+
+```text
+eval_holdout_only: 5614 frames, 15054 holdout points
+frame-mean RMSE/MAE: 8.696082 / 7.652211 m/s
+holdout-point-weighted RMSE/MAE: 14.819533 / 6.724179 m/s
+single_holdout_pressure_test: 1688 frames, frame RMSE/MAE 10.588383 / 10.588383 m/s
+multi_holdout_supported: 3926 frames, frame RMSE/MAE 7.882480 / 6.389791 m/s
+no_holdout_unverified_reconstruction: 1781 frames, RMSE/MAE 留空，仅保留业务诊断
+```
+
+解释：结果符合当前 strict holdout 评估要求，但精度仍属于传统基线，不是最终模型。单候选压力测试和强风/垂直失配长尾是主要误差来源。参考：WMO aircraft-based observations 说明飞机风观测适合作为航空气象观测基准，Mode-S/EHS 风场论文说明飞机派生风观测需要质控和分层评估；因此本项目继续坚持 aircraft holdout-only 验证。文献：WMO ABO `https://wmo.int/aircraft-based-observations-programme`；de Haan and Stoffelen 2016 `https://amt.copernicus.org/articles/9/4141/2016/`。
+
+### 17.2 代表帧可视化
+
+已重建并可视化 6 类代表帧：
+
+```text
+20260217120000  low_error
+20260127110000  median_error
+20260209134200  near_6ms_boundary
+20260129001800  high_multi_holdout
+20260126003600  extreme_single_holdout
+20260206191200  no_holdout_high_risk
+```
+
+输出：
+
+```text
+baseline NPZ:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/baseline_recon
+
+baseline PNG/CSV:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/baseline_visuals
+
+vertical-risk candidate NPZ:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/vertical_risk_recon
+
+vertical-risk candidate PNG/CSV:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_timepower15_representative_20260529/vertical_risk_visuals
+```
+
+每套输出包含 6 张 `*_centralized_stage4_slices.png`、6 张 `*_centralized_stage4_diagnostics.png` 和 6 个 `*_centralized_stage4_slice_stats.csv`。Stage4 图是重构结果诊断图；有效范围仍以 `recon_mask_3d` 为准。参考：PyDDA/3DVAR 风场反演强调约束与诊断场共同解释重构结果，不能只看图像填色。文献：PyDDA `https://openradarscience.org/PyDDA/`。
+
+### 17.3 垂直失配/过平滑补丁
+
+新增代码：
+
+```text
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+  --vertical-risk-mode off|preserve_strong_layers
+  --vertical-gradient-preserve-weight
+  --vertical-context-mismatch-damping
+
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+  同步支持 metrics-only 消融评估
+```
+
+实现原则：
+
+```text
+1. 默认 off，确保既有 TimePower15 全量结果可复现。
+2. preserve_strong_layers 打开后，只在强风层/垂直失配/过平滑候选体素上降低跨层扩散。
+3. 风险体素的平滑邻域从 6 邻域改为水平 4 邻域，减少垂直方向跨层抹平。
+4. 对高置信原始锚点向原始场回拉，避免低置信填补覆盖观测支撑层。
+```
+
+小样本结果：6 个代表帧的 holdout RMSE 基本不变，垂直 mismatch/oversmooth 诊断略有波动，没有证据支持把该补丁设为默认主线。它当前是候选消融开关，后续应在 200 帧/7395 帧分层表里再验证。参考：Perona-Malik 各向异性扩散支持“保边/保梯度而非全方向平滑”；PyDDA/3DVAR 使用平滑、背景、质量连续等约束，但需要避免把真实强垂直梯度过度抹平。文献：Perona and Malik 1990 `https://doi.org/10.1109/34.56205`；PyDDA `https://openradarscience.org/PyDDA/`。
+
+### 17.4 CMA / PINN / Diffusion 已启动的 manifest
+
+已生成训练清单：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest_cma_pinn_diffusion_20260529/centralized_training_manifest.json
+/data/LFT-W02_data/pengxu/centralized_v1_output/training_manifest_cma_pinn_diffusion_20260529/centralized_training_manifest.md
+```
+
+清单统计：
+
+```text
+frames_total: 7395
+frames_with_stage4_metrics: 7395
+frames_with_cma_raw_wind_bracket: 7395
+cma_raw_file_count: 773
+cma_raw_wind_time_count: 129
+split_counts: train 5176 / val 1109 / test 1110
+```
+
+CMA 使用边界：
+
+```text
+CMA/CRA40 只作弱背景、条件输入、边界/物理约束；
+PINN 输出 delta_u/delta_v；
+F_pinn = F_timepower15 + delta；
+Diffusion 在 PINN 后处理局地残差、不确定性、低置信补全；
+正式验证仍只用飞机 holdout，不用 CMA 作 truth。
+```
+
+参考：PINN 原始框架支持把 PDE/物理约束写入神经网络训练损失；GenCast 说明扩散模型适合概率集合和不确定性表达；CRA40/CMA 再分析适合作背景场而非本项目 truth。文献：Raissi et al. 2019 `https://doi.org/10.1016/j.jcp.2018.10.045`；GenCast Nature 2024 `https://www.nature.com/articles/s41586-024-08252-9`；CRA40 `https://doi.org/10.1007/s13351-023-2086-x`。
