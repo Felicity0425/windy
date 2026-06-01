@@ -1546,3 +1546,121 @@ Diffusion = PINN 后的局地残差、不确定性、低置信补全
 ```
 
 参考：PINN 物理约束神经网络 `https://doi.org/10.1016/j.jcp.2018.10.045`；GenCast 扩散集合天气预报与不确定性表达 `https://www.nature.com/articles/s41586-024-08252-9`；CRA40/CMA 再分析背景资料 `https://doi.org/10.1007/s13351-023-2086-x`。
+
+## 21. 2026-06-01 三方法 200 帧严格 holdout 对比补充
+
+本节记录 2026-05-31 重新覆盖的 Stage4 三方法对比。旧 4 帧小样本结论已作废，正式参考本节和输出目录：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531
+```
+
+### 21.1 三条分支定义
+
+1. 纯航空器 baseline：
+   `gaussian`，`diagnostic_only`，`proxy` 物理约束，XY radius/sigma = 12/6，Z radius/sigma = 2/1，`role_conflict_mode=off`，不引入 CMA。
+2. TimePower15 optimal adaptive：
+   `gaussian`，`diagnostic_weighted`，`pydda_3dvar_proxy`，XY radius/sigma = 8/4，Z radius/sigma = 2/1，`current_weight_boost=2.0`，`context_weight_scale=0.5`，`context_time_conf_power=1.5`，`role_conflict_mode=current_priority_adaptive`。
+3. CMA weak-background branch：
+   继承 TimePower15 optimal adaptive 参数，并加入 `cma_proxy_background`，`cma_background_weight=0.1`，`cma_confidence_source=temporal_conf`，`cma_confidence_cap=0.3`，`cma_qc_gating=temporal_change`。CMA 只作弱背景，不作 truth。
+
+### 21.2 200 帧轻量指标结论
+
+样本为固定 seed `20260531` 抽取的 200 个 strict aircraft holdout 帧，共 530 个 holdout 点。主对比只输出 CSV/MD 指标，不保存 200 帧 full NPZ。
+
+```text
+method              frames  holdout_points  frame RMSE/MAE       weighted RMSE/MAE
+aircraft baseline   200     530             11.6898 / 10.3011    18.9184 / 10.3509
+TimePower15         200     530              8.6365 /  7.4232    15.0387 /  7.1727
+CMA weak bg         200     530              9.3770 /  8.0171    14.9638 /  7.8683
+```
+
+逐帧胜负：
+
+```text
+TimePower15 vs baseline: 143 win / 56 loss / 1 tie, mean delta RMSE = -3.053 m/s
+CMA vs TimePower15:       66 win / 134 loss / 0 tie, mean delta RMSE = +0.741 m/s
+CMA vs baseline:         115 win / 85 loss / 0 tie, mean delta RMSE = -2.313 m/s
+```
+
+结论：200 帧结果证明 TimePower15 总体优于纯航空器 baseline。此前 4 帧小样本中“TimePower15 更差”的判断是抽样偏差。TimePower15 输给 baseline 的 56 帧多属于局部情形：8/4 窄核和 current-priority adaptive 会减少上下文外推；当 holdout 点恰好依赖更宽核上下文支撑时，baseline 的 12/6 宽核平滑可能偶然更接近 holdout。CMA 弱背景能兜底部分极端坏帧，但也会把局地飞机观测结构拉向大尺度背景，因此整体不如 TimePower15 稳定。
+
+严格边界保持不变：
+
+```text
+all_strict_holdout_no_leakage = True
+any_motion_used_as_wind = False
+CMA used as background_not_truth = True
+no-holdout frames are not official RMSE/MAE
+```
+
+### 21.3 代表帧 full NPZ 和可视化
+
+代表帧只对 6 帧生成 full NPZ 与图件：
+
+```text
+20260206074200  TimePower15 strongest improvement: baseline 74.105, TP 3.265, CMA 5.221
+20260125124200  baseline strongest win: baseline 4.132, TP 32.594, CMA 8.602
+20260205190000  CMA strongest improvement vs TP: baseline 86.000, TP 86.000, CMA 32.619
+20260216015400  CMA strongest degradation vs TP: baseline 32.713, TP 29.007, CMA 66.290
+20260126090000  near 6 m/s boundary: baseline 5.999, TP 2.230, CMA 5.401
+20260223133000  high-error multi-holdout: baseline 117.236, TP 108.858, CMA 109.389
+```
+
+输出：
+
+```text
+analysis report:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/analysis/three_method_compare_analysis.md
+
+merged frame table:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/analysis/three_method_200_frame_merged.csv
+
+representative NPZ:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_npz/aircraft_baseline
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_npz/timepower15
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_npz/cma_proxy_background
+
+representative visuals:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_visuals/aircraft_baseline
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_visuals/timepower15
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_visuals/cma_proxy_background
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/representative_visuals/cma_proxy_field
+```
+
+校验：
+
+```text
+representative frames: 6
+baseline/timepower15/cma NPZ: 6 / 6 / 6
+baseline/timepower15/cma Stage4 slice PNG: 6 / 6 / 6
+CMA proxy field PNG: 6
+max representative RMSE diff between full NPZ and metrics CSV: 0.0
+```
+
+校验文件：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/analysis/representative_npz_visual_validation.json
+```
+
+### 21.4 代码修改
+
+`stage/centralized_v1/core/centralized_stage4_sensitivity.py` 已扩展为支持 CMA weak-background 的 metrics-only 对比，避免为了 200 帧指标主对比保存 full NPZ。新增能力：
+
+```text
+--cma-fusion-mode off|cma_proxy_background|cma_reanalysis_background|cma_pseudo_observation
+--cma-proxy-dir
+--cma-proxy-npz
+--cma-background-weight
+--cma-confidence-source
+--cma-confidence-cap
+--cma-time-confidence
+--cma-space-confidence
+--cma-pseudo-source
+--cma-qc-gating
+```
+
+实现上复用 `centralized_stage4_ground_recon.py` 中的 CMA helper：读取 CMA proxy、应用 CMA background 到 accumulator、对 CMA-only 体素置信度封顶，并在输出表中记录 `cma_temporal_conf_mean`、`cma_rapid_change_fraction`、`cma_background_active_voxels`、`cma_used_as_background_not_truth` 等诊断列。分片并行路径也同步透传 CMA 参数。
+
+后续新窗口注意：如果继续做三方法或 CMA 消融，优先使用该 metrics-only 路径批量评估；只在筛出的代表帧上生成 NPZ/PNG。不要再用 4 帧小样本推断总体优劣。

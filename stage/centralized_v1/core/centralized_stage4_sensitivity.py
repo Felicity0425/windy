@@ -27,6 +27,10 @@ if str(STAGE_DIR) not in sys.path:
 
 from stage.centralized_v1.configs.centralized_v1_config import REGENERATED_STAGE2_OUTPUT_DIR
 from stage.centralized_v1.core.centralized_stage4_ground_recon import (
+    CMA_CONFIDENCE_SOURCES,
+    CMA_FUSION_MODES,
+    CMA_PSEUDO_SOURCES,
+    CMA_QC_GATING_MODES,
     CONFIDENCE_MODES,
     DEFAULT_QC_CALIBRATION,
     LOCALIZATION_KERNELS,
@@ -35,10 +39,14 @@ from stage.centralized_v1.core.centralized_stage4_ground_recon import (
     STRICT_STAGE4_OUTPUT_DIR,
     VERTICAL_RISK_MODES,
     _accumulate_localized,
+    _apply_cma_background_to_accumulator,
     _build_wind_observations,
+    _cap_cma_only_confidence,
     _field_proxy_diagnostics,
     _finalize_effective_reconstruction,
+    _find_cma_proxy_npz,
     _leakage_report,
+    _load_cma_background,
     _load_json,
     _load_qc_calibration,
     _load_stage2_npz,
@@ -234,6 +242,16 @@ def _evaluate_metrics_only(
     role_conflict_mode: str = "off",
     conflict_speed_threshold_mps: float = 12.0,
     conflict_context_factor: float = 0.25,
+    cma_fusion_mode: str = "off",
+    cma_proxy_dir: Path | None = None,
+    cma_proxy_npz: Path | None = None,
+    cma_background_weight: float = 0.10,
+    cma_confidence_source: str = "dense",
+    cma_confidence_cap: float = 0.35,
+    cma_time_confidence: float = 0.70,
+    cma_space_confidence: float = 0.70,
+    cma_pseudo_source: str = "reanalysis",
+    cma_qc_gating: str = "off",
 ) -> dict[str, Any]:
     npz = _load_stage2_npz(Path(stage2_row["multimodal_vox_path"]))
     shape = tuple(int(v) for v in np.asarray(npz[C2_GRID_SHAPE], dtype=np.int32).tolist())
@@ -254,14 +272,6 @@ def _evaluate_metrics_only(
         context_weight_scale=context_weight_scale,
         context_time_conf_power=context_time_conf_power,
     )
-    leakage = _leakage_report(
-        wind_records=wind_records,
-        train_wind=train_wind,
-        holdout_wind=holdout_wind,
-        observations=observations,
-        motion_records=motion_records,
-        context_motion_records=context_motion_records,
-    )
     acc = _accumulate_localized(
         shape,
         observations,
@@ -275,7 +285,42 @@ def _evaluate_metrics_only(
         conflict_context_factor=conflict_context_factor,
         qc_calibration=qc_calibration or DEFAULT_QC_CALIBRATION,
     )
+    time_str = str(stage2_row["time_str"])
+    cma_path = cma_proxy_npz
+    if cma_path is None:
+        cma_path = _find_cma_proxy_npz(cma_proxy_dir, time_str)
+    cma_u, cma_v, cma_conf, cma_fusion_diagnostics = _load_cma_background(
+        cma_path,
+        shape,
+        fusion_mode=cma_fusion_mode,
+        confidence_source=cma_confidence_source,
+        pseudo_source=cma_pseudo_source,
+        qc_gating=cma_qc_gating,
+    )
+    if str(cma_fusion_mode) != "off":
+        cma_fusion_diagnostics.update(
+            _apply_cma_background_to_accumulator(
+                acc,
+                cma_u=cma_u,
+                cma_v=cma_v,
+                cma_conf=cma_conf,
+                background_weight=float(cma_background_weight),
+                time_confidence=float(cma_time_confidence),
+                space_confidence=float(cma_space_confidence),
+            )
+        )
+    leakage = _leakage_report(
+        wind_records=wind_records,
+        train_wind=train_wind,
+        holdout_wind=holdout_wind,
+        observations=observations,
+        motion_records=motion_records,
+        context_motion_records=context_motion_records,
+        cma_fusion_mode=cma_fusion_mode,
+        cma_proxy_npz=str(cma_path or ""),
+    )
     recon = _make_reconstruction(acc)
+    recon = _cap_cma_only_confidence(recon, acc, cma_confidence_cap=float(cma_confidence_cap))
     pre_refine_voxels = int(np.count_nonzero(recon["recon_mask"]))
     recon, refine_metrics = _pinn_diffusion_refine(
         recon,
@@ -361,6 +406,21 @@ def _evaluate_metrics_only(
         "role_conflict_mode": str(role_conflict_mode),
         "conflict_speed_threshold_mps": float(conflict_speed_threshold_mps),
         "conflict_context_factor": float(conflict_context_factor),
+        "cma_fusion_mode": str(cma_fusion_mode),
+        "cma_proxy_npz": str(cma_path or ""),
+        "cma_background_weight": float(cma_background_weight),
+        "cma_confidence_source": str(cma_confidence_source),
+        "cma_confidence_cap": float(cma_confidence_cap),
+        "cma_time_confidence": float(cma_time_confidence),
+        "cma_space_confidence": float(cma_space_confidence),
+        "cma_pseudo_source": str(cma_pseudo_source),
+        "cma_qc_gating": str(cma_qc_gating),
+        "cma_temporal_conf_mean": float(cma_fusion_diagnostics.get("cma_temporal_conf_mean", 0.0)),
+        "cma_temporal_change_speed_mean_mps": float(cma_fusion_diagnostics.get("cma_temporal_change_speed_mean_mps", 0.0)),
+        "cma_rapid_change_fraction": float(cma_fusion_diagnostics.get("cma_rapid_change_fraction", 0.0)),
+        "cma_effective_conf_mean": float(cma_fusion_diagnostics.get("cma_effective_conf_mean", 0.0)),
+        "cma_background_active_voxels": int(cma_fusion_diagnostics.get("cma_background_active_voxels", 0)),
+        "cma_used_as_background_not_truth": bool(leakage.get("cma_used_as_background_not_truth", False)),
         "role_conflict_voxels": int(role_conflict_diag["role_conflict_voxels"]),
         "role_overlap_voxels": int(role_conflict_diag["role_overlap_voxels"]),
         "role_conflict_fraction_of_overlap": float(role_conflict_diag["role_conflict_fraction_of_overlap"]),
@@ -651,10 +711,28 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]],
             str(args.role_conflict_mode),
             "--conflict-speed-threshold-mps",
             str(args.conflict_speed_threshold_mps),
-        "--conflict-context-factor",
-        str(args.conflict_context_factor),
-        "--progress-interval-seconds",
-        str(args.progress_interval_seconds),
+            "--conflict-context-factor",
+            str(args.conflict_context_factor),
+            "--cma-fusion-mode",
+            str(args.cma_fusion_mode),
+            "--cma-proxy-dir",
+            str(args.cma_proxy_dir),
+            "--cma-background-weight",
+            str(args.cma_background_weight),
+            "--cma-confidence-source",
+            str(args.cma_confidence_source),
+            "--cma-confidence-cap",
+            str(args.cma_confidence_cap),
+            "--cma-time-confidence",
+            str(args.cma_time_confidence),
+            "--cma-space-confidence",
+            str(args.cma_space_confidence),
+            "--cma-pseudo-source",
+            str(args.cma_pseudo_source),
+            "--cma-qc-gating",
+            str(args.cma_qc_gating),
+            "--progress-interval-seconds",
+            str(args.progress_interval_seconds),
             "--num-workers",
             "1",
             "--shard-id",
@@ -666,6 +744,8 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]],
         ]
         if args.qc_calibration:
             cmd.extend(["--qc-calibration", str(args.qc_calibration)])
+        if args.cma_proxy_npz:
+            cmd.extend(["--cma-proxy-npz", str(args.cma_proxy_npz)])
 
         with log_file.open("w", encoding="utf-8") as log:
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, text=True, env=env_base)
@@ -725,6 +805,16 @@ def main() -> None:
     parser.add_argument("--role-conflict-mode", choices=sorted(ROLE_CONFLICT_MODES), default="off")
     parser.add_argument("--conflict-speed-threshold-mps", type=float, default=12.0)
     parser.add_argument("--conflict-context-factor", type=float, default=0.25)
+    parser.add_argument("--cma-fusion-mode", choices=sorted(CMA_FUSION_MODES), default="off")
+    parser.add_argument("--cma-proxy-dir", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/cma_ra_virtual_radial_3dvar"))
+    parser.add_argument("--cma-proxy-npz", type=Path)
+    parser.add_argument("--cma-background-weight", type=float, default=0.10)
+    parser.add_argument("--cma-confidence-source", choices=sorted(CMA_CONFIDENCE_SOURCES), default="dense")
+    parser.add_argument("--cma-confidence-cap", type=float, default=0.35)
+    parser.add_argument("--cma-time-confidence", type=float, default=0.70)
+    parser.add_argument("--cma-space-confidence", type=float, default=0.70)
+    parser.add_argument("--cma-pseudo-source", choices=sorted(CMA_PSEUDO_SOURCES), default="reanalysis")
+    parser.add_argument("--cma-qc-gating", choices=sorted(CMA_QC_GATING_MODES), default="off")
     parser.add_argument("--progress-interval-seconds", type=float, default=10.0)
     parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--shard-id", type=int, default=-1)
@@ -791,6 +881,16 @@ def main() -> None:
                             role_conflict_mode=str(args.role_conflict_mode),
                             conflict_speed_threshold_mps=float(args.conflict_speed_threshold_mps),
                             conflict_context_factor=float(args.conflict_context_factor),
+                            cma_fusion_mode=str(args.cma_fusion_mode),
+                            cma_proxy_dir=args.cma_proxy_dir,
+                            cma_proxy_npz=args.cma_proxy_npz,
+                            cma_background_weight=float(args.cma_background_weight),
+                            cma_confidence_source=str(args.cma_confidence_source),
+                            cma_confidence_cap=float(args.cma_confidence_cap),
+                            cma_time_confidence=float(args.cma_time_confidence),
+                            cma_space_confidence=float(args.cma_space_confidence),
+                            cma_pseudo_source=str(args.cma_pseudo_source),
+                            cma_qc_gating=str(args.cma_qc_gating),
                         )
                     )
                     done += 1
@@ -840,6 +940,16 @@ def main() -> None:
         "role_conflict_mode": str(args.role_conflict_mode),
         "conflict_speed_threshold_mps": float(args.conflict_speed_threshold_mps),
         "conflict_context_factor": float(args.conflict_context_factor),
+        "cma_fusion_mode": str(args.cma_fusion_mode),
+        "cma_proxy_dir": str(args.cma_proxy_dir),
+        "cma_proxy_npz": str(args.cma_proxy_npz or ""),
+        "cma_background_weight": float(args.cma_background_weight),
+        "cma_confidence_source": str(args.cma_confidence_source),
+        "cma_confidence_cap": float(args.cma_confidence_cap),
+        "cma_time_confidence": float(args.cma_time_confidence),
+        "cma_space_confidence": float(args.cma_space_confidence),
+        "cma_pseudo_source": str(args.cma_pseudo_source),
+        "cma_qc_gating": str(args.cma_qc_gating),
         "qc_calibration": qc_calibration,
         "output_csv": str(csv_path),
         "output_md": str(md_path),
