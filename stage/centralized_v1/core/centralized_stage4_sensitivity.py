@@ -27,6 +27,7 @@ if str(STAGE_DIR) not in sys.path:
 
 from stage.centralized_v1.configs.centralized_v1_config import REGENERATED_STAGE2_OUTPUT_DIR
 from stage.centralized_v1.core.centralized_stage4_ground_recon import (
+    CMA_BACKGROUND_WEIGHT_MODES,
     CMA_CONFIDENCE_SOURCES,
     CMA_FUSION_MODES,
     CMA_PSEUDO_SOURCES,
@@ -252,6 +253,7 @@ def _evaluate_metrics_only(
     cma_proxy_dir: Path | None = None,
     cma_proxy_npz: Path | None = None,
     cma_background_weight: float = 0.10,
+    cma_background_weight_mode: str = "fixed",
     cma_confidence_source: str = "dense",
     cma_confidence_cap: float = 0.35,
     cma_time_confidence: float = 0.70,
@@ -295,7 +297,12 @@ def _evaluate_metrics_only(
         "adaptive_reasons": "fixed",
         "adaptive_no_holdout_inputs_used": True,
     }
-    if localization_policy in {"diagnostic_adaptive", "diagnostic_adaptive_v3", "diagnostic_adaptive_regime_v4"}:
+    if localization_policy in {
+        "diagnostic_adaptive",
+        "diagnostic_adaptive_v3",
+        "diagnostic_adaptive_regime_v4",
+        "support_role_height_aware",
+    }:
         selected_loc, adaptive_diagnostics = _select_adaptive_localization(
             train_current_wind=train_wind,
             context_wind=context_wind_records,
@@ -324,9 +331,12 @@ def _evaluate_metrics_only(
         conflict_speed_threshold_mps=conflict_speed_threshold_mps,
         conflict_context_factor=conflict_context_factor,
         vertical_localization_policy=vertical_localization_policy,
+        localization_policy=localization_policy,
+        localization_context=adaptive_diagnostics,
         qc_calibration=qc_calibration or DEFAULT_QC_CALIBRATION,
     )
     vertical_localization_diag = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
+    srha_horizontal_diag = dict(acc.get("srha_horizontal_scalar_diagnostics", {}))
     time_str = str(stage2_row["time_str"])
     cma_path = cma_proxy_npz
     if cma_path is None:
@@ -338,6 +348,7 @@ def _evaluate_metrics_only(
         confidence_source=cma_confidence_source,
         pseudo_source=cma_pseudo_source,
         qc_gating=cma_qc_gating,
+        qc_calibration=qc_calibration or DEFAULT_QC_CALIBRATION,
     )
     if str(cma_fusion_mode) != "off":
         cma_fusion_diagnostics.update(
@@ -347,6 +358,8 @@ def _evaluate_metrics_only(
                 cma_v=cma_v,
                 cma_conf=cma_conf,
                 background_weight=float(cma_background_weight),
+                background_weight_mode=str(cma_background_weight_mode),
+                qc_calibration=qc_calibration or DEFAULT_QC_CALIBRATION,
                 time_confidence=float(cma_time_confidence),
                 space_confidence=float(cma_space_confidence),
             )
@@ -465,6 +478,22 @@ def _evaluate_metrics_only(
             vertical_localization_diag.get("vertical_localization_sigma_factor_stats", {}) or {}
         ).get("max"),
         "vertical_localization_reason_counts": str(vertical_localization_diag.get("vertical_localization_reason_counts", "")),
+        "srha_horizontal_sigma_factor_mean": (
+            srha_horizontal_diag.get("srha_horizontal_sigma_factor_stats", {}) or {}
+        ).get("mean"),
+        "srha_horizontal_sigma_factor_min": (
+            srha_horizontal_diag.get("srha_horizontal_sigma_factor_stats", {}) or {}
+        ).get("min"),
+        "srha_horizontal_sigma_factor_max": (
+            srha_horizontal_diag.get("srha_horizontal_sigma_factor_stats", {}) or {}
+        ).get("max"),
+        "srha_horizontal_reason_counts": str(srha_horizontal_diag.get("srha_horizontal_reason_counts", "")),
+        "srha_high_altitude_gate_count": int(srha_horizontal_diag.get("high_altitude_gate_count", 0)),
+        "srha_high_speed_gate_count": int(srha_horizontal_diag.get("high_speed_gate_count", 0)),
+        "srha_role_gap_gate_count": int(srha_horizontal_diag.get("role_gap_gate_count", 0)),
+        "srha_stale_context_gate_count": int(srha_horizontal_diag.get("stale_context_gate_count", 0)),
+        "srha_sparse_fresh_widen_gate_count": int(srha_horizontal_diag.get("sparse_fresh_widen_gate_count", 0)),
+        "srha_dense_current_gate_count": int(srha_horizontal_diag.get("dense_current_gate_count", 0)),
         "vertical_risk_refine_enabled": float(refine_metrics.get("vertical_risk_refine_enabled", 0.0)),
         "vertical_risk_candidate_voxels_last": int(refine_metrics.get("vertical_risk_candidate_voxels_last", 0.0)),
         "vertical_oversmooth_preserve_voxels_last": int(refine_metrics.get("vertical_oversmooth_preserve_voxels_last", 0.0)),
@@ -478,6 +507,7 @@ def _evaluate_metrics_only(
         "cma_fusion_mode": str(cma_fusion_mode),
         "cma_proxy_npz": str(cma_path or ""),
         "cma_background_weight": float(cma_background_weight),
+        "cma_background_weight_mode": str(cma_background_weight_mode),
         "cma_confidence_source": str(cma_confidence_source),
         "cma_confidence_cap": float(cma_confidence_cap),
         "cma_time_confidence": float(cma_time_confidence),
@@ -489,6 +519,17 @@ def _evaluate_metrics_only(
         "cma_rapid_change_fraction": float(cma_fusion_diagnostics.get("cma_rapid_change_fraction", 0.0)),
         "cma_effective_conf_mean": float(cma_fusion_diagnostics.get("cma_effective_conf_mean", 0.0)),
         "cma_background_active_voxels": int(cma_fusion_diagnostics.get("cma_background_active_voxels", 0)),
+        "cma_background_gate_mean": float(cma_fusion_diagnostics.get("cma_background_gate_mean", 0.0)),
+        "cma_background_gate_active_fraction": float(cma_fusion_diagnostics.get("cma_background_gate_active_fraction", 0.0)),
+        "cma_background_no_current_gate_voxels": int(cma_fusion_diagnostics.get("cma_background_no_current_gate_voxels", 0)),
+        "cma_background_localized_support_gate_voxels": int(
+            cma_fusion_diagnostics.get("cma_background_localized_support_gate_voxels", 0)
+        ),
+        "cma_background_localized_support_gate_fraction": float(
+            cma_fusion_diagnostics.get("cma_background_localized_support_gate_fraction", 0.0)
+        ),
+        "cma_background_sparse_current_gate_fraction": float(cma_fusion_diagnostics.get("cma_background_sparse_current_gate_fraction", 0.0)),
+        "cma_strict_temporal_gate_active_fraction": float(cma_fusion_diagnostics.get("cma_strict_temporal_gate_active_fraction", 0.0)),
         "cma_used_as_background_not_truth": bool(leakage.get("cma_used_as_background_not_truth", False)),
         "role_conflict_voxels": int(role_conflict_diag["role_conflict_voxels"]),
         "role_overlap_voxels": int(role_conflict_diag["role_overlap_voxels"]),
@@ -1038,6 +1079,8 @@ def _run_parent_shards(
             str(args.cma_proxy_dir),
             "--cma-background-weight",
             str(args.cma_background_weight),
+            "--cma-background-weight-mode",
+            str(args.cma_background_weight_mode),
             "--cma-confidence-source",
             str(args.cma_confidence_source),
             "--cma-confidence-cap",
@@ -1133,6 +1176,7 @@ def main() -> None:
     parser.add_argument("--cma-proxy-dir", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/cma_ra_virtual_radial_3dvar"))
     parser.add_argument("--cma-proxy-npz", type=Path)
     parser.add_argument("--cma-background-weight", type=float, default=0.10)
+    parser.add_argument("--cma-background-weight-mode", choices=sorted(CMA_BACKGROUND_WEIGHT_MODES), default="fixed")
     parser.add_argument("--cma-confidence-source", choices=sorted(CMA_CONFIDENCE_SOURCES), default="dense")
     parser.add_argument("--cma-confidence-cap", type=float, default=0.35)
     parser.add_argument("--cma-time-confidence", type=float, default=0.70)
@@ -1213,6 +1257,7 @@ def main() -> None:
                             cma_proxy_dir=args.cma_proxy_dir,
                             cma_proxy_npz=args.cma_proxy_npz,
                             cma_background_weight=float(args.cma_background_weight),
+                            cma_background_weight_mode=str(args.cma_background_weight_mode),
                             cma_confidence_source=str(args.cma_confidence_source),
                             cma_confidence_cap=float(args.cma_confidence_cap),
                             cma_time_confidence=float(args.cma_time_confidence),

@@ -31,6 +31,12 @@ from stage.centralized_v1.configs.centralized_v1_config import ALT_MIN, DELTA_AL
 from stage.centralized_v1.configs.centralized_v1_contract import (
     C4_BLINDZONE_MASK,
     C4_CLOUD_2D,
+    C4_DISPLAY_CONF,
+    C4_DISPLAY_FILL_DIAGNOSTICS_JSON,
+    C4_DISPLAY_MASK,
+    C4_DISPLAY_SOURCE,
+    C4_DISPLAY_U,
+    C4_DISPLAY_V,
     C4_POINT_EVAL_JSON,
     C4_RECON_CONF,
     C4_RECON_MASK,
@@ -95,6 +101,8 @@ def _render_batch_subprocess(args: argparse.Namespace, frame_npz_paths: list[Pat
                 str(args.crop_mode),
                 "--crop-pad",
                 str(args.crop_pad),
+                "--field-mode",
+                str(args.field_mode),
             ]
             if args.x_slice is not None:
                 cmd.extend(["--x-slice", str(args.x_slice)])
@@ -532,6 +540,7 @@ def main() -> None:
     parser.add_argument("--x-slice", type=int)
     parser.add_argument("--crop-mode", choices=["full", "bbox"], default="full")
     parser.add_argument("--crop-pad", type=int, default=24)
+    parser.add_argument("--field-mode", choices=["recon", "display_filled"], default="recon")
     parser.add_argument("--num-workers", type=int, default=1)
     args = parser.parse_args()
 
@@ -551,13 +560,45 @@ def main() -> None:
         return
     args.frame_npz = batch_paths[0]
     with np.load(args.frame_npz, allow_pickle=False) as z:
-        u3d = np.asarray(z[C4_RECON_U], dtype=np.float32)
-        v3d = np.asarray(z[C4_RECON_V], dtype=np.float32)
-        c3d = np.asarray(z[C4_RECON_CONF], dtype=np.float32)
-        mask3d = np.asarray(z[C4_RECON_MASK], dtype=np.float32) > 0 if C4_RECON_MASK in z.files else c3d > 0
+        field_mode = str(args.field_mode)
+        if field_mode == "display_filled":
+            missing = [key for key in [C4_DISPLAY_U, C4_DISPLAY_V, C4_DISPLAY_CONF, C4_DISPLAY_MASK] if key not in z.files]
+            if missing:
+                raise KeyError(f"display_filled mode requested but NPZ is missing {missing}: {args.frame_npz}")
+            u3d = np.asarray(z[C4_DISPLAY_U], dtype=np.float32)
+            v3d = np.asarray(z[C4_DISPLAY_V], dtype=np.float32)
+            c3d = np.asarray(z[C4_DISPLAY_CONF], dtype=np.float32)
+            mask3d = np.asarray(z[C4_DISPLAY_MASK], dtype=np.float32) > 0
+            display_source = np.asarray(z[C4_DISPLAY_SOURCE], dtype=np.uint8) if C4_DISPLAY_SOURCE in z.files else np.zeros_like(c3d, dtype=np.uint8)
+            official_u3d = np.asarray(z[C4_RECON_U], dtype=np.float32)
+            official_v3d = np.asarray(z[C4_RECON_V], dtype=np.float32)
+            official_c3d = np.asarray(z[C4_RECON_CONF], dtype=np.float32)
+            official_mask3d = np.asarray(z[C4_RECON_MASK], dtype=np.float32) > 0 if C4_RECON_MASK in z.files else official_c3d > 0
+            official_blind = (
+                np.asarray(z[C4_BLINDZONE_MASK], dtype=np.float32) if C4_BLINDZONE_MASK in z.files else np.zeros_like(official_c3d)
+            )
+            if C4_DISPLAY_FILL_DIAGNOSTICS_JSON in z.files:
+                display_fill_diagnostics = json.loads(str(z[C4_DISPLAY_FILL_DIAGNOSTICS_JSON]))
+            else:
+                display_fill_diagnostics = {}
+        else:
+            u3d = np.asarray(z[C4_RECON_U], dtype=np.float32)
+            v3d = np.asarray(z[C4_RECON_V], dtype=np.float32)
+            c3d = np.asarray(z[C4_RECON_CONF], dtype=np.float32)
+            mask3d = np.asarray(z[C4_RECON_MASK], dtype=np.float32) > 0 if C4_RECON_MASK in z.files else c3d > 0
+            display_source = np.zeros_like(c3d, dtype=np.uint8)
+            display_fill_diagnostics = {}
+            official_u3d = u3d
+            official_v3d = v3d
+            official_c3d = c3d
+            official_mask3d = mask3d
+            official_blind = np.asarray(z[C4_BLINDZONE_MASK], dtype=np.float32) if C4_BLINDZONE_MASK in z.files else np.zeros_like(c3d)
         c3d = np.where(mask3d, c3d, 0.0).astype(np.float32)
         blind = np.asarray(z[C4_BLINDZONE_MASK], dtype=np.float32) if C4_BLINDZONE_MASK in z.files else np.zeros_like(c3d)
-        blind = np.where(mask3d, blind, 0.0).astype(np.float32)
+        if field_mode == "display_filled":
+            blind = np.where(display_source == 2, 1.0, 0.0).astype(np.float32)
+        else:
+            blind = np.where(mask3d, blind, 0.0).astype(np.float32)
         cloud = np.asarray(z[C4_CLOUD_2D], dtype=np.float32)
         if C4_POINT_EVAL_JSON in z.files:
             point_eval = json.loads(str(z[C4_POINT_EVAL_JSON]))
@@ -565,7 +606,7 @@ def main() -> None:
             point_eval = []
         time_str = str(z["time_str"]) if "time_str" in z.files else args.frame_npz.stem
 
-    original_extent = _extent_stats(mask3d, blind, u3d, v3d, c3d)
+    original_extent = _extent_stats(official_mask3d, official_blind, official_u3d, official_v3d, official_c3d)
     u3d, v3d, c3d, mask3d, blind, cloud, point_eval, crop_meta = _crop_to_recon_bbox(
         u3d,
         v3d,
@@ -582,6 +623,8 @@ def main() -> None:
     extent = _extent_stats(mask3d, blind, u3d, v3d, c3d)
     cols = max(3, len(z_levels) + 1)
     fig, axes = plt.subplots(2, cols, figsize=(5.6 * cols, 9.0), constrained_layout=True)
+    if str(args.field_mode) == "display_filled":
+        fig.patch.set_facecolor("#e5e7eb")
     for i, z_idx in enumerate(z_levels):
         alt_m = z_idx * DELTA_ALT
         _render_horizontal_slice(
@@ -621,15 +664,31 @@ def main() -> None:
     axes[1, 1].set_ylabel("altitude (km)")
     axes[1, 1].grid(alpha=0.25)
     for j in range(2, axes.shape[1]):
+        axes[1, j].set_facecolor("#e5e7eb")
         axes[1, j].axis("off")
+    if str(args.field_mode) == "display_filled" and axes.shape[1] > 2:
+        axes[1, 2].text(
+            0.02,
+            0.92,
+            "display-filled layer\nweak background outside official recon\nnot official accuracy",
+            va="top",
+            fontsize=11,
+        )
 
     metrics = _metrics_from_point_eval(point_eval)
+    field_note = "Official recon_mask/no wind claim outside mask"
+    if str(args.field_mode) == "display_filled":
+        bg_voxels = int(display_fill_diagnostics.get("display_background_voxels", int(np.count_nonzero(blind > 0))))
+        field_note = (
+            "DISPLAY-FILLED: full-color low-confidence weak background outside official recon; "
+            f"background voxels={bg_voxels}; not official accuracy"
+        )
     fig.suptitle(
         f"Centralized v1 Stage4 slices - {time_str}\n"
         f"Domain lat {LAT_MIN:.1f}-{LAT_MAX:.1f}, lon {LON_MIN:.1f}-{LON_MAX:.1f}, altitude step {DELTA_ALT:.0f} m | "
         f"hold-out={int(metrics['holdout_count'])}, RMSE={metrics['rmse_vector']:.2f} m/s, MAE={metrics['mae_vector']:.2f} m/s\n"
         f"Effective recon={int(original_extent['effective_reconstructed_voxels'])} voxels ({float(original_extent['effective_reconstructed_fraction']):.3%} of full grid); "
-        f"low-conf fill={int(extent['low_conf_fill_voxels'])}; pale gray means outside recon_mask/no wind claim",
+        f"low-conf/display fill={int(extent['low_conf_fill_voxels'])}; {field_note}",
         fontsize=12,
     )
     out = args.out_dir / f"{time_str}_centralized_stage4_slices.png"

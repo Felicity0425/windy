@@ -1,0 +1,12 @@
+gate,baseline_value,candidate_value,passed,detail
+PROMOTION_OVERALL,all gates pass,PASS,True,
+strict_holdout_no_leakage_all_true,True,True,True,
+motion_used_as_wind_all_false,False,False,True,
+weighted_rmse_no_worse,14.769035584178605,14.769035584178605,True,
+frame_p95_no_worse,27.986110980146194,27.986110980146194,True,
+frame_p99_no_worse,58.78377017267204,58.78377017267204,True,
+alt_12km_plus_vector_rmse_no_worse,19.917697780481415,19.917697780481415,True,
+light_wind_vector_rmse_mps_no_worse,5.195876810373414,5.195876810373414,True,
+light_wind_vector_mae_mps_no_worse,4.185283061205855,4.185283061205855,True,
+floor10_relative_error_mae_no_worse,0.2828040963230872,0.2828040963230872,True,
+light_moderate_relative_tail_no_new_failure,0,0,True,candidate relative_error_ratio > 2 and delta_vector_error > 5 m/s

@@ -55,6 +55,12 @@ from stage.centralized_v1.configs.centralized_v1_contract import (  # noqa: E402
     C4_C_SPACE_3D,
     C4_C_TIME_3D,
     C4_CLOUD_2D,
+    C4_DISPLAY_CONF,
+    C4_DISPLAY_FILL_DIAGNOSTICS_JSON,
+    C4_DISPLAY_MASK,
+    C4_DISPLAY_SOURCE,
+    C4_DISPLAY_U,
+    C4_DISPLAY_V,
     C4_POINT_EVAL_JSON,
     C4_RECON_CONF,
     C4_RECON_MASK,
@@ -65,7 +71,13 @@ from stage.centralized_v1.configs.centralized_v1_contract import (  # noqa: E402
 STRICT_STAGE4_OUTPUT_DIR = Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_center_strict")
 EFFECTIVE_CONF_THRESHOLD = 1e-6
 LOCALIZATION_KERNELS = {"gaussian", "gaspari_cohn"}
-LOCALIZATION_POLICIES = {"fixed", "diagnostic_adaptive", "diagnostic_adaptive_v3", "diagnostic_adaptive_regime_v4"}
+LOCALIZATION_POLICIES = {
+    "fixed",
+    "diagnostic_adaptive",
+    "diagnostic_adaptive_v3",
+    "diagnostic_adaptive_regime_v4",
+    "support_role_height_aware",
+}
 VERTICAL_LOCALIZATION_POLICIES = {"fixed", "support_adaptive"}
 CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted", "obs_error_weighted"}
 PHYSICS_CONSTRAINT_MODES = {"proxy", "pydda_3dvar_proxy"}
@@ -74,7 +86,10 @@ VERTICAL_RISK_MODES = {"off", "preserve_strong_layers"}
 CMA_FUSION_MODES = {"off", "cma_proxy_background", "cma_reanalysis_background", "cma_pseudo_observation"}
 CMA_CONFIDENCE_SOURCES = {"dense", "coverage_conf", "temporal_conf", "coverage_temporal_conf"}
 CMA_PSEUDO_SOURCES = {"reanalysis", "proxy"}
-CMA_QC_GATING_MODES = {"off", "temporal_change"}
+CMA_QC_GATING_MODES = {"off", "temporal_change", "strict_temporal"}
+CMA_BACKGROUND_WEIGHT_MODES = {"fixed", "diagnostic_gated", "sparse_temporal_gated"}
+DISPLAY_FILL_MODES = {"off", "low_conf_background"}
+DISPLAY_FILL_SOURCES = {"cma_reanalysis", "cma_proxy"}
 CMA_RAPID_CHANGE_QC_FACTOR = np.float32(0.35)
 POINT_HIGH_ERROR_THRESHOLD_MPS = 30.0
 POINT_STRONG_WIND_THRESHOLD_MPS = 90.0
@@ -153,6 +168,35 @@ DEFAULT_QC_CALIBRATION = {
     "adaptive_localization_v3_sparse_guard_max_current_support": 2.0,
     "adaptive_localization_v3_sparse_guard_max_context_time_conf": 0.52,
     "adaptive_localization_v3_sparse_guard_min_local_consistency": 0.985,
+    "adaptive_localization_srha_very_sparse_current_support": 1.0,
+    "adaptive_localization_srha_sparse_current_support": 2.0,
+    "adaptive_localization_srha_dense_current_support": 10.0,
+    "adaptive_localization_srha_high_altitude_m": 12000.0,
+    "adaptive_localization_srha_high_altitude_fraction": 0.22,
+    "adaptive_localization_srha_high_speed_mps": 60.0,
+    "adaptive_localization_srha_high_speed_fraction": 0.12,
+    "adaptive_localization_srha_fresh_context_time_conf": 0.50,
+    "adaptive_localization_srha_stale_context_time_conf": 0.36,
+    "adaptive_localization_srha_stable_local_consistency": 0.975,
+    "adaptive_localization_srha_unstable_local_consistency": 0.93,
+    "adaptive_localization_srha_moderate_role_gap_mps": 18.0,
+    "adaptive_localization_srha_high_role_gap_mps": 30.0,
+    "adaptive_localization_srha_tight_radius_z": 1.0,
+    "adaptive_localization_srha_tight_sigma_z": 0.75,
+    "adaptive_localization_srha_horizontal_min_sigma_factor": 0.65,
+    "adaptive_localization_srha_horizontal_max_sigma_factor": 1.15,
+    "adaptive_localization_srha_horizontal_high_altitude_factor": 0.78,
+    "adaptive_localization_srha_horizontal_high_speed_factor": 0.85,
+    "adaptive_localization_srha_horizontal_role_gap_factor": 0.80,
+    "adaptive_localization_srha_horizontal_stale_context_factor": 0.75,
+    "adaptive_localization_srha_horizontal_dense_current_factor": 0.90,
+    "adaptive_localization_srha_horizontal_sparse_fresh_factor": 1.10,
+    "adaptive_localization_srha_vertical_role_gap_factor": 0.85,
+    "adaptive_localization_srha_vertical_stale_context_factor": 0.85,
+    "cma_gated_sparse_current_norm_threshold": 0.18,
+    "cma_gated_min_effective_conf": 0.02,
+    "cma_strict_min_temporal_conf": 0.55,
+    "cma_strict_max_temporal_change_mps": 8.0,
     "references": [
         "https://amt.copernicus.org/articles/18/3341/2025/",
         "https://amt.copernicus.org/articles/9/4141/2016/",
@@ -559,6 +603,7 @@ def _dynamic_vertical_localization(
     base_sigma_z: float,
     policy: str,
     qc_calibration: dict[str, Any],
+    localization_context: dict[str, Any] | None = None,
 ) -> dict[str, float | int | str]:
     policy = str(policy)
     if policy not in VERTICAL_LOCALIZATION_POLICIES:
@@ -596,6 +641,16 @@ def _dynamic_vertical_localization(
     if not reasons and obs_count <= _cal_float(qc_calibration, "vertical_localization_sparse_count", 1.0):
         factor *= _cal_float(qc_calibration, "vertical_localization_sparse_weak_factor", 1.10)
         reasons.append("sparse_weak_support")
+    context = localization_context or {}
+    if str(context.get("localization_policy", "")) == "support_role_height_aware":
+        role_gap = _safe_float(context.get("adaptive_role_gap_mps"), 0.0)
+        context_time_mean = _safe_float(context.get("adaptive_context_time_conf_mean"), 1.0)
+        if role_gap >= _cal_float(qc_calibration, "adaptive_localization_srha_moderate_role_gap_mps", 18.0):
+            factor *= _cal_float(qc_calibration, "adaptive_localization_srha_vertical_role_gap_factor", 0.85)
+            reasons.append("srha_role_gap")
+        if source_role == "context_wind" and context_time_mean <= _cal_float(qc_calibration, "adaptive_localization_srha_stale_context_time_conf", 0.36):
+            factor *= _cal_float(qc_calibration, "adaptive_localization_srha_vertical_stale_context_factor", 0.85)
+            reasons.append("srha_stale_context")
 
     min_factor = _cal_float(qc_calibration, "vertical_localization_min_sigma_factor", 0.55)
     max_factor = _cal_float(qc_calibration, "vertical_localization_max_sigma_factor", 1.25)
@@ -606,6 +661,105 @@ def _dynamic_vertical_localization(
         "sigma_z": base_sigma_z * factor,
         "sigma_factor": factor,
         "reason": "+".join(reasons) if reasons else "neutral",
+    }
+
+
+def _dynamic_horizontal_localization(
+    row: dict[str, Any],
+    *,
+    base_radius_xy: int,
+    base_sigma_xy: float,
+    policy: str,
+    qc_calibration: dict[str, Any],
+    localization_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy = str(policy)
+    base_radius_xy = max(0, int(base_radius_xy))
+    base_sigma_xy = max(1e-6, float(base_sigma_xy))
+    if policy != "support_role_height_aware" or base_radius_xy == 0:
+        return {
+            "radius_xy": base_radius_xy,
+            "sigma_xy": base_sigma_xy,
+            "sigma_factor": 1.0,
+            "reason": "fixed",
+            "high_altitude_gate": False,
+            "high_speed_gate": False,
+            "role_gap_gate": False,
+            "stale_context_gate": False,
+            "sparse_fresh_widen_gate": False,
+            "dense_current_gate": False,
+        }
+
+    context = localization_context or {}
+    speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
+    altitude = _safe_float(row.get("alt_meters"), ALT_MIN + max(0, _safe_int(row.get("z"), 0)) * DELTA_ALT)
+    source_role = str(row.get("source_role"))
+    time_conf = _safe_float(row.get("time_conf"), 1.0)
+    current_support = _safe_float(context.get("adaptive_current_support"), 0.0)
+    context_time_mean = _safe_float(context.get("adaptive_context_time_conf_mean"), 0.0)
+    local_consistency_mean = _safe_float(context.get("adaptive_local_consistency_mean"), 1.0)
+    role_gap = _safe_float(context.get("adaptive_role_gap_mps"), 0.0)
+
+    high_altitude_gate = altitude >= _cal_float(qc_calibration, "adaptive_localization_srha_high_altitude_m", 12000.0)
+    high_speed_gate = speed >= _cal_float(qc_calibration, "adaptive_localization_srha_high_speed_mps", 60.0)
+    role_gap_gate = role_gap >= _cal_float(qc_calibration, "adaptive_localization_srha_moderate_role_gap_mps", 18.0)
+    stale_context_gate = (
+        source_role == "context_wind"
+        and (
+            time_conf <= _cal_float(qc_calibration, "adaptive_localization_srha_stale_context_time_conf", 0.36)
+            or context_time_mean <= _cal_float(qc_calibration, "adaptive_localization_srha_stale_context_time_conf", 0.36)
+        )
+    )
+    dense_current_gate = (
+        source_role == "current_wind_train"
+        and current_support >= _cal_float(qc_calibration, "adaptive_localization_srha_dense_current_support", 10.0)
+    )
+    sparse_fresh_widen_gate = (
+        current_support <= _cal_float(qc_calibration, "adaptive_localization_srha_sparse_current_support", 2.0)
+        and context_time_mean >= _cal_float(qc_calibration, "adaptive_localization_srha_fresh_context_time_conf", 0.50)
+        and local_consistency_mean >= _cal_float(qc_calibration, "adaptive_localization_srha_stable_local_consistency", 0.975)
+        and role_gap < _cal_float(qc_calibration, "adaptive_localization_srha_moderate_role_gap_mps", 18.0)
+        and not high_altitude_gate
+        and not high_speed_gate
+        and not stale_context_gate
+    )
+
+    factor = 1.0
+    reasons: list[str] = []
+    if high_altitude_gate:
+        factor *= _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_high_altitude_factor", 0.78)
+        reasons.append("high_altitude")
+    if high_speed_gate:
+        factor *= _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_high_speed_factor", 0.85)
+        reasons.append("high_speed")
+    if role_gap_gate:
+        factor *= _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_role_gap_factor", 0.80)
+        reasons.append("role_gap")
+    if stale_context_gate:
+        factor *= _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_stale_context_factor", 0.75)
+        reasons.append("stale_context")
+    if dense_current_gate:
+        factor *= _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_dense_current_factor", 0.90)
+        reasons.append("dense_current")
+    if sparse_fresh_widen_gate:
+        factor *= _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_sparse_fresh_factor", 1.10)
+        reasons.append("sparse_fresh_widen")
+
+    min_factor = _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_min_sigma_factor", 0.65)
+    max_factor = _cal_float(qc_calibration, "adaptive_localization_srha_horizontal_max_sigma_factor", 1.15)
+    factor = float(np.clip(factor, min_factor, max_factor))
+    radius_xy = max(1, int(round(base_radius_xy * factor))) if base_radius_xy > 0 else 0
+    return {
+        "radius_xy": radius_xy,
+        "sigma_xy": base_sigma_xy * factor,
+        "sigma_factor": factor,
+        "reason": "+".join(reasons) if reasons else "neutral",
+        "high_altitude_gate": high_altitude_gate,
+        "high_speed_gate": high_speed_gate,
+        "role_gap_gate": role_gap_gate,
+        "stale_context_gate": stale_context_gate,
+        "sparse_fresh_widen_gate": sparse_fresh_widen_gate,
+        "dense_current_gate": dense_current_gate,
     }
 
 
@@ -647,6 +801,12 @@ def _mean_record_value(rows: list[dict[str, Any]], key: str, default: float = 0.
     return float(np.mean(finite)) if finite else float(default)
 
 
+def _record_fraction(rows: list[dict[str, Any]], predicate: Any) -> float:
+    if not rows:
+        return 0.0
+    return float(sum(1 for row in rows if predicate(row))) / float(len(rows))
+
+
 def _select_adaptive_localization(
     *,
     train_current_wind: list[dict[str, Any]],
@@ -670,6 +830,16 @@ def _select_adaptive_localization(
     local_consistency_mean = _mean_record_value(observations, "local_consistency_conf_factor", 1.0)
     context_time_mean = _mean_record_value([row for row in observations if str(row.get("source_role")) == "context_wind"], "time_conf", 0.0)
     current_time_mean = _mean_record_value([row for row in observations if str(row.get("source_role")) == "current_wind_train"], "time_conf", 1.0)
+    high_altitude_m = _cal_float(calibration, "adaptive_localization_srha_high_altitude_m", 12000.0)
+    high_speed_mps = _cal_float(calibration, "adaptive_localization_srha_high_speed_mps", 60.0)
+    high_altitude_fraction = _record_fraction(
+        observations,
+        lambda row: _safe_float(row.get("alt_meters"), ALT_MIN + _safe_int(row.get("z"), 0) * DELTA_ALT) >= high_altitude_m,
+    )
+    high_speed_fraction = _record_fraction(
+        observations,
+        lambda row: math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2) >= high_speed_mps,
+    )
     current_density_proxy = min(1.0, current_count / max(1e-6, _cal_float(calibration, "adaptive_localization_high_current_support", 8.0)))
     context_density_proxy = min(1.0, context_count / max(1e-6, _cal_float(calibration, "adaptive_localization_high_context_support", 300.0)))
     context_fresh_proxy = min(1.0, context_time_mean / max(1e-6, _cal_float(calibration, "adaptive_localization_high_context_time_conf", 0.45)))
@@ -755,6 +925,44 @@ def _select_adaptive_localization(
             score = 10.0
             reasons.append("v4_low_obs_error_weight_caps_widening_10_5")
 
+    if str(policy) == "support_role_height_aware":
+        very_sparse_current = current_count <= _cal_float(calibration, "adaptive_localization_srha_very_sparse_current_support", 1.0)
+        sparse_current = current_count <= _cal_float(calibration, "adaptive_localization_srha_sparse_current_support", 2.0)
+        dense_current = current_count >= _cal_float(calibration, "adaptive_localization_srha_dense_current_support", 10.0)
+        fresh_context = context_time_mean >= _cal_float(calibration, "adaptive_localization_srha_fresh_context_time_conf", 0.50)
+        stale_context = context_time_mean <= _cal_float(calibration, "adaptive_localization_srha_stale_context_time_conf", 0.36)
+        stable_local = local_consistency_mean >= _cal_float(calibration, "adaptive_localization_srha_stable_local_consistency", 0.975)
+        unstable_local = local_consistency_mean <= _cal_float(calibration, "adaptive_localization_srha_unstable_local_consistency", 0.93)
+        moderate_role_gap = role_gap_mps >= _cal_float(calibration, "adaptive_localization_srha_moderate_role_gap_mps", 18.0)
+        high_role_gap = role_gap_mps >= _cal_float(calibration, "adaptive_localization_srha_high_role_gap_mps", 30.0)
+        high_altitude_regime = high_altitude_fraction >= _cal_float(calibration, "adaptive_localization_srha_high_altitude_fraction", 0.22)
+        high_speed_regime = high_speed_fraction >= _cal_float(calibration, "adaptive_localization_srha_high_speed_fraction", 0.12)
+
+        score = 8.0
+        reasons.append("srha_default_8_4")
+        if high_role_gap or unstable_local:
+            score = 8.0
+            reasons.append("srha_role_or_consistency_risk_keeps_8_4")
+        elif (very_sparse_current or sparse_current) and context_useful and fresh_context and stable_local:
+            score = 10.0
+            reasons.append("srha_sparse_current_fresh_context_prefers_10_5")
+        elif dense_current and not moderate_role_gap:
+            score = 8.0
+            reasons.append("srha_dense_current_anchor_prefers_8_4")
+        elif context_useful and fresh_context and not high_vertical_mismatch:
+            score = 10.0
+            reasons.append("srha_moderate_support_fresh_context_prefers_10_5")
+
+        if high_altitude_regime or high_speed_regime:
+            score = min(score, 10.0)
+            reasons.append("srha_high_alt_or_speed_caps_xy_widening")
+        if stale_context or (moderate_role_gap and not sparse_current):
+            score = 8.0
+            reasons.append("srha_stale_or_role_gap_guard_prefers_8_4")
+        if low_obs_error_weight and score > 8.0 and not (sparse_current and fresh_context):
+            score = 8.0
+            reasons.append("srha_low_obs_error_guard_prefers_8_4")
+
     candidate_radii = [int(row["localization_radius_xy"]) for row in candidates]
     min_radius = min(candidate_radii)
     max_radius = max(candidate_radii)
@@ -767,9 +975,18 @@ def _select_adaptive_localization(
             "localization_radius_z": int(default_radius_z),
             "localization_sigma_z": float(default_sigma_z),
         }
-    # Keep the current vertical spread fixed until vertical-risk phase has a stronger rule.
-    selected["localization_radius_z"] = int(default_radius_z)
-    selected["localization_sigma_z"] = float(default_sigma_z)
+    if str(policy) == "support_role_height_aware" and (
+        high_altitude_fraction >= _cal_float(calibration, "adaptive_localization_srha_high_altitude_fraction", 0.22)
+        or high_speed_fraction >= _cal_float(calibration, "adaptive_localization_srha_high_speed_fraction", 0.12)
+        or role_gap_mps >= _cal_float(calibration, "adaptive_localization_srha_moderate_role_gap_mps", 18.0)
+    ):
+        selected["localization_radius_z"] = int(_cal_float(calibration, "adaptive_localization_srha_tight_radius_z", 1.0))
+        selected["localization_sigma_z"] = float(_cal_float(calibration, "adaptive_localization_srha_tight_sigma_z", 0.75))
+        reasons.append("srha_tight_vertical_for_tail_regime")
+    else:
+        # Keep the current vertical spread fixed until vertical-risk phase has a stronger rule.
+        selected["localization_radius_z"] = int(default_radius_z)
+        selected["localization_sigma_z"] = float(default_sigma_z)
     diagnostics = {
         "localization_policy": str(policy),
         "localization_candidate_grid": str(candidate_grid),
@@ -787,6 +1004,8 @@ def _select_adaptive_localization(
         "adaptive_local_consistency_mean": float(local_consistency_mean),
         "adaptive_role_gap_mps": float(role_gap_mps),
         "adaptive_role_conflict_proxy": float(role_conflict_proxy),
+        "adaptive_high_altitude_fraction": float(high_altitude_fraction),
+        "adaptive_high_speed_fraction": float(high_speed_fraction),
         "adaptive_current_density_proxy": float(current_density_proxy),
         "adaptive_context_density_proxy": float(context_density_proxy),
         "adaptive_context_fresh_proxy": float(context_fresh_proxy),
@@ -894,6 +1113,8 @@ def _accumulate_localized(
     conflict_speed_threshold_mps: float = 12.0,
     conflict_context_factor: float = 0.25,
     vertical_localization_policy: str = "fixed",
+    localization_policy: str = "fixed",
+    localization_context: dict[str, Any] | None = None,
     qc_calibration: dict[str, Any] | None = None,
 ) -> dict[str, np.ndarray]:
     z_dim, h_dim, w_dim = shape
@@ -923,6 +1144,17 @@ def _accumulate_localized(
         )
     vertical_sigma_factors: list[float] = []
     vertical_reason_counts: dict[str, int] = {}
+    horizontal_sigma_factors: list[float] = []
+    horizontal_reason_counts: dict[str, int] = {}
+    srha_gate_counts = {
+        "high_altitude_gate_count": 0,
+        "high_speed_gate_count": 0,
+        "role_gap_gate_count": 0,
+        "stale_context_gate_count": 0,
+        "sparse_fresh_widen_gate_count": 0,
+        "dense_current_gate_count": 0,
+    }
+    localization_context = localization_context or {}
     component_gap = np.zeros(shape, dtype=np.float32)
     threshold_field = np.zeros(shape, dtype=np.float32)
     context_factor_field = np.zeros(shape, dtype=np.float32)
@@ -956,6 +1188,9 @@ def _accumulate_localized(
     radius_z = max(0, int(radius_z))
     sigma_xy = max(1e-6, float(sigma_xy))
     sigma_z = max(1e-6, float(sigma_z))
+    localization_policy = str(localization_policy)
+    if localization_policy not in LOCALIZATION_POLICIES:
+        raise ValueError(f"Unsupported localization_policy={localization_policy}; choose {sorted(LOCALIZATION_POLICIES)}")
     if localization_kernel not in LOCALIZATION_KERNELS:
         raise ValueError(f"Unsupported localization_kernel={localization_kernel}; choose {sorted(LOCALIZATION_KERNELS)}")
     role_conflict_mode = str(role_conflict_mode)
@@ -970,13 +1205,31 @@ def _accumulate_localized(
         x = int(row["x"])
         if not (0 <= z < z_dim and 0 <= y < h_dim and 0 <= x < w_dim):
             continue
+        horizontal_loc = _dynamic_horizontal_localization(
+            row,
+            base_radius_xy=radius_xy,
+            base_sigma_xy=sigma_xy,
+            policy=localization_policy,
+            qc_calibration=calibration,
+            localization_context=localization_context,
+        )
         vertical_loc = _dynamic_vertical_localization(
             row,
             base_radius_z=radius_z,
             base_sigma_z=sigma_z,
             policy=vertical_localization_policy,
             qc_calibration=calibration,
+            localization_context=localization_context,
         )
+        row_radius_xy = int(horizontal_loc["radius_xy"])
+        row_sigma_xy = float(horizontal_loc["sigma_xy"])
+        horizontal_factor = float(horizontal_loc["sigma_factor"])
+        horizontal_reason = str(horizontal_loc["reason"])
+        horizontal_sigma_factors.append(horizontal_factor)
+        horizontal_reason_counts[horizontal_reason] = horizontal_reason_counts.get(horizontal_reason, 0) + 1
+        for gate_key in srha_gate_counts:
+            if bool(horizontal_loc.get(gate_key.replace("_count", ""), False)):
+                srha_gate_counts[gate_key] += 1
         row_radius_z = int(vertical_loc["radius_z"])
         row_sigma_z = float(vertical_loc["sigma_z"])
         factor = float(vertical_loc["sigma_factor"])
@@ -985,15 +1238,15 @@ def _accumulate_localized(
         vertical_reason_counts[reason] = vertical_reason_counts.get(reason, 0) + 1
         z0 = max(0, z - row_radius_z)
         z1 = min(z_dim, z + row_radius_z + 1)
-        y0 = max(0, y - radius_xy)
-        y1 = min(h_dim, y + radius_xy + 1)
-        x0 = max(0, x - radius_xy)
-        x1 = min(w_dim, x + radius_xy + 1)
+        y0 = max(0, y - row_radius_xy)
+        y1 = min(h_dim, y + row_radius_xy + 1)
+        x0 = max(0, x - row_radius_xy)
+        x1 = min(w_dim, x + row_radius_xy + 1)
 
         dz = (np.arange(z0, z1, dtype=np.float32) - float(z))[:, None, None]
         dy = (np.arange(y0, y1, dtype=np.float32) - float(y))[None, :, None]
         dx = (np.arange(x0, x1, dtype=np.float32) - float(x))[None, None, :]
-        localization = _localization_weights(dx, dy, dz, sigma_xy, row_sigma_z, localization_kernel)
+        localization = _localization_weights(dx, dy, dz, row_sigma_xy, row_sigma_z, localization_kernel)
         local_w = localization * np.float32(row["base_weight"])
 
         acc_u[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * local_w
@@ -1127,6 +1380,14 @@ def _accumulate_localized(
             "vertical_localization_base_radius_z": int(radius_z),
             "vertical_localization_base_sigma_z": float(sigma_z),
         },
+        "srha_horizontal_scalar_diagnostics": {
+            "srha_localization_policy": localization_policy,
+            "srha_horizontal_sigma_factor_stats": _factor_stats(horizontal_sigma_factors),
+            "srha_horizontal_reason_counts": json.dumps(horizontal_reason_counts, ensure_ascii=False, sort_keys=True),
+            "srha_horizontal_base_radius_xy": int(radius_xy),
+            "srha_horizontal_base_sigma_xy": float(sigma_xy),
+            **srha_gate_counts,
+        },
     }
 
 
@@ -1168,6 +1429,7 @@ def _load_cma_background(
     confidence_source: str,
     pseudo_source: str = "reanalysis",
     qc_gating: str = "off",
+    qc_calibration: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
     fusion_mode = str(fusion_mode)
     if fusion_mode not in CMA_FUSION_MODES:
@@ -1187,6 +1449,7 @@ def _load_cma_background(
     qc_gating = str(qc_gating)
     if qc_gating not in CMA_QC_GATING_MODES:
         raise ValueError(f"Unsupported cma_qc_gating={qc_gating}; choose {sorted(CMA_QC_GATING_MODES)}")
+    calibration = qc_calibration or DEFAULT_QC_CALIBRATION
     with np.load(path, allow_pickle=True) as z:
         if fusion_mode == "cma_proxy_background":
             u_key, v_key = "u_proxy_3d", "v_proxy_3d"
@@ -1222,12 +1485,31 @@ def _load_cma_background(
             temporal_change = np.asarray(z["cma_temporal_change_speed_3d"], dtype=np.float32)
         if "cma_temporal_conf_3d" in z.files:
             temporal_conf = np.clip(np.asarray(z["cma_temporal_conf_3d"], dtype=np.float32), 0.0, 1.0)
-        if qc_gating == "temporal_change":
+        strict_temporal_gate: np.ndarray | None = None
+        if qc_gating in {"temporal_change", "strict_temporal"}:
             temporal_conf_already_used = confidence_source in {"temporal_conf", "coverage_temporal_conf"}
             if temporal_conf is not None and not temporal_conf_already_used:
                 conf = (conf * temporal_conf).astype(np.float32)
             if rapid_change.shape == shape:
                 conf = np.where(rapid_change > 0.0, conf * CMA_RAPID_CHANGE_QC_FACTOR, conf).astype(np.float32)
+        if qc_gating == "strict_temporal":
+            min_temporal_conf = np.float32(
+                np.clip(_cal_float(calibration, "cma_strict_min_temporal_conf", 0.55), 0.0, 1.0)
+            )
+            max_temporal_change = np.float32(
+                max(0.0, _cal_float(calibration, "cma_strict_max_temporal_change_mps", 8.0))
+            )
+            if temporal_conf is None or temporal_conf.shape != shape:
+                temporal_ok = np.zeros(shape, dtype=bool)
+            else:
+                temporal_ok = np.asarray(temporal_conf, dtype=np.float32) >= min_temporal_conf
+            rapid_ok = np.ones(shape, dtype=bool)
+            if rapid_change.shape == shape:
+                rapid_ok &= np.asarray(rapid_change, dtype=np.float32) <= 0.0
+            if temporal_change.shape == shape:
+                rapid_ok &= np.asarray(temporal_change, dtype=np.float32) <= max_temporal_change
+            strict_temporal_gate = temporal_ok & rapid_ok
+            conf = np.where(strict_temporal_gate, conf, 0.0).astype(np.float32)
         meta: dict[str, Any] = {
             "cma_fusion_mode": fusion_mode,
             "cma_proxy_npz": str(path),
@@ -1241,6 +1523,11 @@ def _load_cma_background(
             "cma_time_str": _scalar_npz_text(z["cma_time_str"]) if "cma_time_str" in z.files else "",
             "cma_time_method": _scalar_npz_text(z["cma_time_method"]) if "cma_time_method" in z.files else "",
         }
+        if strict_temporal_gate is not None:
+            meta["cma_strict_min_temporal_conf"] = float(_cal_float(calibration, "cma_strict_min_temporal_conf", 0.55))
+            meta["cma_strict_max_temporal_change_mps"] = float(_cal_float(calibration, "cma_strict_max_temporal_change_mps", 8.0))
+            meta["cma_strict_temporal_gate_active_voxels"] = int(np.count_nonzero(strict_temporal_gate))
+            meta["cma_strict_temporal_gate_active_fraction"] = float(np.count_nonzero(strict_temporal_gate) / max(1, strict_temporal_gate.size))
         if "cma_temporal_conf_3d" in z.files:
             temporal_conf = np.asarray(z["cma_temporal_conf_3d"], dtype=np.float32)
             meta["cma_temporal_conf_mean"] = float(np.mean(temporal_conf))
@@ -1267,16 +1554,61 @@ def _apply_cma_background_to_accumulator(
     background_weight: float,
     time_confidence: float,
     space_confidence: float,
+    background_weight_mode: str = "fixed",
+    qc_calibration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    weight = (np.clip(cma_conf, 0.0, 1.0).astype(np.float32) * np.float32(max(0.0, background_weight))).astype(np.float32)
+    background_weight_mode = str(background_weight_mode)
+    if background_weight_mode not in CMA_BACKGROUND_WEIGHT_MODES:
+        raise ValueError(
+            f"Unsupported cma_background_weight_mode={background_weight_mode}; "
+            f"choose {sorted(CMA_BACKGROUND_WEIGHT_MODES)}"
+        )
+    calibration = qc_calibration or DEFAULT_QC_CALIBRATION
+    effective_conf = np.clip(cma_conf, 0.0, 1.0).astype(np.float32)
+    gate = np.ones_like(effective_conf, dtype=np.float32)
+    current_w = np.asarray(acc.get("acc_current_w"), dtype=np.float32)
+    support_scale = np.float32(1.0)
+    current_density = np.zeros_like(effective_conf, dtype=np.float32)
+    sparse_threshold = np.float32(0.0)
+    min_effective_conf = np.float32(0.0)
+    context_w = np.asarray(acc.get("acc_context_w"), dtype=np.float32)
+    localized_support_gate = (current_w > 0.0) | (context_w > 0.0)
+    no_current_gate = (current_w <= 0.0) & localized_support_gate
+    sparse_current_gate = np.zeros_like(effective_conf, dtype=bool)
+    if background_weight_mode in {"diagnostic_gated", "sparse_temporal_gated"}:
+        support_scale = np.float32(_positive_percentile_scale(current_w, percentile=90.0, default=1.0))
+        current_density = np.clip(current_w / max(float(support_scale), 1e-6), 0.0, 1.0).astype(np.float32)
+        sparse_threshold = np.float32(
+            np.clip(_cal_float(calibration, "cma_gated_sparse_current_norm_threshold", 0.18), 0.0, 1.0)
+        )
+        min_effective_conf = np.float32(
+            np.clip(_cal_float(calibration, "cma_gated_min_effective_conf", 0.02), 0.0, 1.0)
+        )
+        sparse_factor = np.clip((sparse_threshold - current_density) / max(float(sparse_threshold), 1e-6), 0.0, 1.0)
+        gate = np.where(effective_conf >= min_effective_conf, sparse_factor, 0.0).astype(np.float32)
+        if background_weight_mode == "sparse_temporal_gated":
+            gate = np.where(localized_support_gate, gate, 0.0).astype(np.float32)
+        sparse_current_gate = gate > 0.0
+    weight = (effective_conf * gate * np.float32(max(0.0, background_weight))).astype(np.float32)
     mask = weight > 0.0
     if not np.any(mask):
         return {
             "cma_background_weight": float(background_weight),
+            "cma_background_weight_mode": background_weight_mode,
             "cma_background_active_voxels": 0,
             "cma_background_weight_sum": 0.0,
             "cma_background_speed_mean_mps": 0.0,
             "cma_background_speed_max_mps": 0.0,
+            "cma_background_gate_mean": float(np.mean(gate)),
+            "cma_background_gate_active_fraction": 0.0,
+            "cma_background_current_density_scale": float(support_scale),
+            "cma_background_sparse_current_norm_threshold": float(sparse_threshold),
+            "cma_background_min_effective_conf": float(min_effective_conf),
+            "cma_background_no_current_gate_voxels": int(np.count_nonzero(no_current_gate)),
+            "cma_background_localized_support_gate_voxels": int(np.count_nonzero(localized_support_gate)),
+            "cma_background_localized_support_gate_fraction": float(np.count_nonzero(localized_support_gate) / max(1, localized_support_gate.size)),
+            "cma_background_sparse_current_gate_voxels": int(np.count_nonzero(sparse_current_gate)),
+            "cma_background_sparse_current_gate_fraction": float(np.count_nonzero(sparse_current_gate) / max(1, sparse_current_gate.size)),
         }
     acc["acc_u"] += cma_u.astype(np.float32) * weight
     acc["acc_v"] += cma_v.astype(np.float32) * weight
@@ -1287,10 +1619,21 @@ def _apply_cma_background_to_accumulator(
     speed = np.sqrt(cma_u.astype(np.float32) ** 2 + cma_v.astype(np.float32) ** 2)
     return {
         "cma_background_weight": float(background_weight),
+        "cma_background_weight_mode": background_weight_mode,
         "cma_background_active_voxels": int(np.count_nonzero(mask)),
         "cma_background_weight_sum": float(np.sum(weight)),
         "cma_background_speed_mean_mps": float(np.mean(speed[mask])),
         "cma_background_speed_max_mps": float(np.max(speed[mask])),
+        "cma_background_gate_mean": float(np.mean(gate)),
+        "cma_background_gate_active_fraction": float(np.count_nonzero(gate > 0.0) / max(1, gate.size)),
+        "cma_background_current_density_scale": float(support_scale),
+        "cma_background_sparse_current_norm_threshold": float(sparse_threshold),
+        "cma_background_min_effective_conf": float(min_effective_conf),
+        "cma_background_no_current_gate_voxels": int(np.count_nonzero(no_current_gate)),
+        "cma_background_localized_support_gate_voxels": int(np.count_nonzero(localized_support_gate)),
+        "cma_background_localized_support_gate_fraction": float(np.count_nonzero(localized_support_gate) / max(1, localized_support_gate.size)),
+        "cma_background_sparse_current_gate_voxels": int(np.count_nonzero(sparse_current_gate)),
+        "cma_background_sparse_current_gate_fraction": float(np.count_nonzero(sparse_current_gate) / max(1, sparse_current_gate.size)),
     }
 
 
@@ -1596,6 +1939,124 @@ def _finalize_effective_reconstruction(recon: dict[str, np.ndarray]) -> dict[str
     finalized["blindzone_initialized"] = (mask & (np.asarray(recon["blindzone_initialized"]) > 0)).astype(np.float32)
     finalized["weight"] = np.asarray(recon["weight"], dtype=np.float32)
     return finalized
+
+
+def _display_fill_fusion_mode(display_fill_source: str) -> str:
+    if display_fill_source == "cma_proxy":
+        return "cma_proxy_background"
+    return "cma_reanalysis_background"
+
+
+def _make_display_filled_field(
+    recon: dict[str, np.ndarray],
+    *,
+    shape: tuple[int, int, int],
+    time_str: str,
+    display_fill_mode: str,
+    display_fill_cma_proxy_dir: Path | None,
+    display_fill_source: str,
+    display_fill_confidence_cap: float,
+    display_fill_qc_gating: str,
+    qc_calibration: dict[str, Any],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    display_fill_mode = str(display_fill_mode)
+    if display_fill_mode not in DISPLAY_FILL_MODES:
+        raise ValueError(f"Unsupported display_fill_mode={display_fill_mode}; choose {sorted(DISPLAY_FILL_MODES)}")
+    display_fill_source = str(display_fill_source)
+    if display_fill_source not in DISPLAY_FILL_SOURCES:
+        raise ValueError(f"Unsupported display_fill_source={display_fill_source}; choose {sorted(DISPLAY_FILL_SOURCES)}")
+    display_fill_qc_gating = str(display_fill_qc_gating)
+    if display_fill_qc_gating not in CMA_QC_GATING_MODES:
+        raise ValueError(f"Unsupported display_fill_qc_gating={display_fill_qc_gating}; choose {sorted(CMA_QC_GATING_MODES)}")
+
+    official_mask = np.asarray(recon["recon_mask"], dtype=np.float32) > 0.0
+    display_u = np.asarray(recon["recon_u"], dtype=np.float32).copy()
+    display_v = np.asarray(recon["recon_v"], dtype=np.float32).copy()
+    display_conf = np.asarray(recon["recon_conf"], dtype=np.float32).copy()
+    display_mask = official_mask.astype(np.float32)
+    display_source = np.where(official_mask, 1, 0).astype(np.uint8)
+    diagnostics: dict[str, Any] = {
+        "display_fill_mode": display_fill_mode,
+        "display_fill_source": display_fill_source,
+        "display_fill_qc_gating": display_fill_qc_gating,
+        "display_fill_is_official_accuracy": False,
+        "display_fill_note": "Display-only weak background fill. Official recon_u/v/conf/mask and strict holdout metrics are unchanged.",
+        "display_official_voxels": int(np.count_nonzero(official_mask)),
+        "display_background_voxels": 0,
+        "display_total_voxels": int(np.prod(shape)),
+        "display_background_confidence_cap": float(np.clip(display_fill_confidence_cap, 0.0, 1.0)),
+    }
+    if display_fill_mode == "off":
+        diagnostics["display_active_voxels"] = int(np.count_nonzero(display_mask > 0.0))
+        return (
+            {
+                "display_u": display_u,
+                "display_v": display_v,
+                "display_conf": display_conf,
+                "display_mask": display_mask,
+                "display_source": display_source,
+            },
+            diagnostics,
+        )
+
+    cma_path = _find_cma_proxy_npz(display_fill_cma_proxy_dir, time_str)
+    if cma_path is None:
+        diagnostics["display_fill_warning"] = "CMA proxy NPZ not found; display field falls back to official recon only."
+        diagnostics["display_active_voxels"] = int(np.count_nonzero(display_mask > 0.0))
+        return (
+            {
+                "display_u": display_u,
+                "display_v": display_v,
+                "display_conf": display_conf,
+                "display_mask": display_mask,
+                "display_source": display_source,
+            },
+            diagnostics,
+        )
+
+    cma_u, cma_v, cma_conf, cma_meta = _load_cma_background(
+        cma_path,
+        shape,
+        fusion_mode=_display_fill_fusion_mode(display_fill_source),
+        confidence_source="temporal_conf",
+        pseudo_source="proxy" if display_fill_source == "cma_proxy" else "reanalysis",
+        qc_gating=display_fill_qc_gating,
+        qc_calibration=qc_calibration,
+    )
+    background_mask = ~official_mask
+    cap = float(np.clip(display_fill_confidence_cap, 0.0, 1.0))
+    floor_conf = np.float32(max(0.0, min(cap, cap * 0.05)))
+    background_conf = np.clip(np.asarray(cma_conf, dtype=np.float32), 0.0, cap).astype(np.float32)
+    if cap > 0.0:
+        background_conf = np.where(background_conf > 0.0, background_conf, floor_conf).astype(np.float32)
+    display_u = np.where(official_mask, display_u, cma_u.astype(np.float32)).astype(np.float32)
+    display_v = np.where(official_mask, display_v, cma_v.astype(np.float32)).astype(np.float32)
+    display_conf = np.where(official_mask, display_conf, background_conf).astype(np.float32)
+    display_mask = np.ones(shape, dtype=np.float32)
+    display_source = np.where(official_mask, 1, 2).astype(np.uint8)
+    diagnostics.update(cma_meta)
+    diagnostics.update(
+        {
+            "display_cma_proxy_npz": str(cma_path),
+            "display_active_voxels": int(display_mask.size),
+            "display_background_voxels": int(np.count_nonzero(background_mask)),
+            "display_background_confidence_mean": float(np.mean(display_conf[background_mask])) if np.any(background_mask) else 0.0,
+            "display_background_confidence_min": float(np.min(display_conf[background_mask])) if np.any(background_mask) else 0.0,
+            "display_background_confidence_max": float(np.max(display_conf[background_mask])) if np.any(background_mask) else 0.0,
+            "display_source_code_1": "official_tp26_reconstruction",
+            "display_source_code_2": "low_confidence_weak_background_display_only",
+        }
+    )
+    return (
+        {
+            "display_u": display_u,
+            "display_v": display_v,
+            "display_conf": display_conf,
+            "display_mask": display_mask,
+            "display_source": display_source,
+        },
+        diagnostics,
+    )
 
 
 def _idx_to_geo_bbox(
@@ -2295,6 +2756,7 @@ def _write_method_md(
     field_diagnostics: dict[str, Any],
     role_conflict_diagnostics: dict[str, Any],
     cma_diagnostics: dict[str, Any],
+    display_fill_diagnostics: dict[str, Any],
     leakage_report: dict[str, Any],
     pressure_test_note: str,
 ) -> None:
@@ -2359,6 +2821,28 @@ def _write_method_md(
     lines.extend(
         [
             "",
+            "## Display-Filled Visualization Diagnostics",
+            "",
+            "Display fill is a product/visualization layer only. It writes `stage4_display_*` fields so low-confidence or no-claim voxels can be colored with weak background context; official `recon_u/v/conf/mask` and strict aircraft holdout RMSE/MAE are unchanged.",
+            "",
+            "| item | value |",
+            "| --- | --- |",
+        ]
+    )
+    display_param_keys = [
+        "display_fill_mode",
+        "display_fill_source",
+        "display_fill_confidence_cap",
+        "display_fill_qc_gating",
+        "display_fill_is_official_accuracy",
+    ]
+    for key in display_param_keys:
+        lines.append(f"| `{key}` | `{json.dumps(params.get(key), ensure_ascii=False)}` |")
+    for key, value in display_fill_diagnostics.items():
+        lines.append(f"| `{key}` | `{json.dumps(value, ensure_ascii=False)}` |")
+    lines.extend(
+        [
+            "",
             "## CMA Background Fusion Diagnostics",
             "",
             "These fields are active only for an explicit CMA-fused candidate branch. CMA dense/proxy fields are weak background information, not aircraft hold-out truth.",
@@ -2374,7 +2858,7 @@ def _write_method_md(
             "",
             "## Confidence Diagnostics",
             "",
-            "Default Stage4 keeps these as diagnostics only. They affect weights when `confidence_mode=diagnostic_weighted`; observation-error sigma/weight fields affect weights when `confidence_mode=obs_error_weighted`.",
+            "Default Stage4 keeps these as diagnostics only. They affect weights when `confidence_mode=diagnostic_weighted`; observation-error sigma/weight fields affect weights only when `confidence_mode=obs_error_weighted`. Those sigma values are priors or local consistency/representativeness diagnostics and are never subtracted from Stage4 RMSE/MAE.",
             "",
             "| item | value |",
             "| --- | --- |",
@@ -2450,7 +2934,7 @@ def _write_method_md(
             "- Strict hold-out: selected `wind_records` are answer keys and are removed before fusion. Aircraft-surveillance weather reconstruction literature supports aircraft-derived wind as a useful but noisy sparse observation source. References: https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0205029 and https://amt.copernicus.org/articles/9/4141/2016/",
             "- Target-voxel localization: Gaussian uses `exp(-0.5*((dx/sigma_xy)^2+(dy/sigma_xy)^2+(dz/sigma_z)^2))`; Gaspari-Cohn uses compact-support fifth-order localization. DART/Gaspari-Cohn localization motivates applying spatial influence relative to the target state/voxel, not the logical Ground Center. Reference: https://docs.dart.ucar.edu/en/latest/assimilation_code/modules/assimilation/cov_cutoff_mod.html",
             "- Optional diagnostic weighting: density/QC/time-consistency factors are recorded by default and only change active weights when `confidence_mode=diagnostic_weighted`. Aircraft-derived wind systems require QC and error awareness. References: https://amt.copernicus.org/articles/18/3341/2025/ and https://amt.copernicus.org/articles/9/4141/2016/",
-            "- Observation-error weighting: `confidence_mode=obs_error_weighted` uses calibration-bin aircraft wind error sigma estimates and applies a clipped inverse-variance factor before target-voxel localization. The calibration must be built without using the active frame holdout labels.",
+            "- Observation-error wording: de Haan / EMADDC sigma values are aircraft wind observation-error priors or QC diagnostics. Local calibration sigma values, including the current `13.64 m/s` figure when present, are local consistency / representativeness sigma estimates. They may weight observations in `confidence_mode=obs_error_weighted`, but they are never deducted from Stage4 strict-holdout RMSE/MAE.",
             "- PINN/diffusion-style gap fill: smoothness, weak divergence and neighbor propagation are proxy diagnostics only, not trained PINN or diffusion models. Local basis: workflow/wiki/wind-field-reconstruction.md and workflow/wiki/beijing-aviation-3d-wind-reconstruction-analysis.md",
             "- `physics_constraint_mode=pydda_3dvar_proxy` adds observation anchoring, masked neighbor smoothness, weak horizontal divergence reduction and speed plausibility clipping. It borrows the 3DVAR idea that observation and physical constraints jointly shape retrieval, but it is still an aircraft-observation proxy rather than PyDDA radar retrieval.",
             "- 3D wind-field constraints: smoothness, mass-continuity/divergence and observation consistency are common in variational wind retrieval. PyDDA/3DVAR and dual-Doppler variational retrieval are reference routes; this Stage4 remains an aircraft-observation proxy, not a Doppler retrieval. References: https://openresearchsoftware.metajnl.com/articles/264 and workflow/wiki/source-dual-doppler-variational-wind-field.md",
@@ -2507,12 +2991,18 @@ def process_frame(
     cma_proxy_dir: Path | None,
     cma_proxy_npz: Path | None,
     cma_background_weight: float,
+    cma_background_weight_mode: str,
     cma_confidence_source: str,
     cma_confidence_cap: float,
     cma_time_confidence: float,
     cma_space_confidence: float,
     cma_pseudo_source: str,
     cma_qc_gating: str,
+    display_fill_mode: str,
+    display_fill_cma_proxy_dir: Path | None,
+    display_fill_source: str,
+    display_fill_confidence_cap: float,
+    display_fill_qc_gating: str,
 ) -> dict[str, Any]:
     npz_path = Path(stage2_row["multimodal_vox_path"])
     npz = _load_stage2_npz(npz_path)
@@ -2549,7 +3039,12 @@ def process_frame(
         "adaptive_reasons": "fixed",
         "adaptive_no_holdout_inputs_used": True,
     }
-    if str(localization_policy) in {"diagnostic_adaptive", "diagnostic_adaptive_v3", "diagnostic_adaptive_regime_v4"}:
+    if str(localization_policy) in {
+        "diagnostic_adaptive",
+        "diagnostic_adaptive_v3",
+        "diagnostic_adaptive_regime_v4",
+        "support_role_height_aware",
+    }:
         selected_loc, adaptive_diagnostics = _select_adaptive_localization(
             train_current_wind=train_wind,
             context_wind=context_wind_records,
@@ -2578,9 +3073,12 @@ def process_frame(
         conflict_speed_threshold_mps=conflict_speed_threshold_mps,
         conflict_context_factor=conflict_context_factor,
         vertical_localization_policy=vertical_localization_policy,
+        localization_policy=localization_policy,
+        localization_context=adaptive_diagnostics,
         qc_calibration=qc_calibration,
     )
     vertical_localization_diagnostics = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
+    srha_horizontal_diagnostics = dict(acc.get("srha_horizontal_scalar_diagnostics", {}))
     cma_path = cma_proxy_npz
     if cma_path is None:
         cma_path = _find_cma_proxy_npz(cma_proxy_dir, time_str)
@@ -2591,6 +3089,7 @@ def process_frame(
         confidence_source=cma_confidence_source,
         pseudo_source=cma_pseudo_source,
         qc_gating=cma_qc_gating,
+        qc_calibration=qc_calibration,
     )
     if str(cma_fusion_mode) != "off":
         cma_fusion_diagnostics.update(
@@ -2600,6 +3099,8 @@ def process_frame(
                 cma_v=cma_v,
                 cma_conf=cma_conf,
                 background_weight=float(cma_background_weight),
+                background_weight_mode=str(cma_background_weight_mode),
+                qc_calibration=qc_calibration,
                 time_confidence=float(cma_time_confidence),
                 space_confidence=float(cma_space_confidence),
             )
@@ -2634,6 +3135,17 @@ def process_frame(
     )
     recon = _finalize_effective_reconstruction(recon)
     point_rows = _point_eval_rows(holdout_wind, recon["recon_u"], recon["recon_v"], recon["recon_conf"], observations, acc)
+    display_field, display_fill_diagnostics = _make_display_filled_field(
+        recon,
+        shape=shape,
+        time_str=time_str,
+        display_fill_mode=display_fill_mode,
+        display_fill_cma_proxy_dir=display_fill_cma_proxy_dir,
+        display_fill_source=display_fill_source,
+        display_fill_confidence_cap=display_fill_confidence_cap,
+        display_fill_qc_gating=display_fill_qc_gating,
+        qc_calibration=qc_calibration,
+    )
     metrics = _metric_summary(point_rows)
     extent_stats = _reconstruction_extent_stats(recon, pre_refine_voxels)
     field_diagnostics = _field_proxy_diagnostics(recon)
@@ -2676,7 +3188,7 @@ def process_frame(
         "active_weight": {
             "diagnostic_only": "obs_conf * time_conf * target_voxel_localization",
             "diagnostic_weighted": "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors",
-            "obs_error_weighted": "time_conf * aircraft_obs_error_inverse_variance_weight * target_voxel_localization * optional_diagnostic_confidence_factors",
+            "obs_error_weighted": "time_conf * aircraft_wind_obs_error_or_representativeness_prior_weight * target_voxel_localization * optional_diagnostic_confidence_factors",
         }.get(str(confidence_mode), str(confidence_mode)),
         "motion_as_wind": False,
         "pinn_diffusion_refine": bool(refine_metrics.get("pinn_diffusion_refine_enabled", 0.0)),
@@ -2693,6 +3205,22 @@ def process_frame(
         "vertical_localization_policy": str(vertical_localization_policy),
         "vertical_gradient_preserve_weight": float(vertical_gradient_preserve_weight),
         "vertical_context_mismatch_damping": float(vertical_context_mismatch_damping),
+        "srha_horizontal_sigma_factor_mean": (
+            srha_horizontal_diagnostics.get("srha_horizontal_sigma_factor_stats", {}) or {}
+        ).get("mean"),
+        "srha_horizontal_sigma_factor_min": (
+            srha_horizontal_diagnostics.get("srha_horizontal_sigma_factor_stats", {}) or {}
+        ).get("min"),
+        "srha_horizontal_sigma_factor_max": (
+            srha_horizontal_diagnostics.get("srha_horizontal_sigma_factor_stats", {}) or {}
+        ).get("max"),
+        "srha_horizontal_reason_counts": str(srha_horizontal_diagnostics.get("srha_horizontal_reason_counts", "")),
+        "srha_high_altitude_gate_count": int(srha_horizontal_diagnostics.get("high_altitude_gate_count", 0)),
+        "srha_high_speed_gate_count": int(srha_horizontal_diagnostics.get("high_speed_gate_count", 0)),
+        "srha_role_gap_gate_count": int(srha_horizontal_diagnostics.get("role_gap_gate_count", 0)),
+        "srha_stale_context_gate_count": int(srha_horizontal_diagnostics.get("stale_context_gate_count", 0)),
+        "srha_sparse_fresh_widen_gate_count": int(srha_horizontal_diagnostics.get("sparse_fresh_widen_gate_count", 0)),
+        "srha_dense_current_gate_count": int(srha_horizontal_diagnostics.get("dense_current_gate_count", 0)),
         "current_weight_boost": float(current_weight_boost),
         "context_weight_scale": float(context_weight_scale),
         "context_time_conf_power": float(context_time_conf_power),
@@ -2702,12 +3230,19 @@ def process_frame(
         "cma_fusion_mode": str(cma_fusion_mode),
         "cma_proxy_npz": str(cma_path or ""),
         "cma_background_weight": float(cma_background_weight),
+        "cma_background_weight_mode": str(cma_background_weight_mode),
         "cma_confidence_source": str(cma_confidence_source),
         "cma_confidence_cap": float(cma_confidence_cap),
         "cma_time_confidence": float(cma_time_confidence),
         "cma_space_confidence": float(cma_space_confidence),
         "cma_pseudo_source": str(cma_pseudo_source),
         "cma_qc_gating": str(cma_qc_gating),
+        "display_fill_mode": str(display_fill_mode),
+        "display_fill_cma_proxy_dir": str(display_fill_cma_proxy_dir or ""),
+        "display_fill_source": str(display_fill_source),
+        "display_fill_confidence_cap": float(display_fill_confidence_cap),
+        "display_fill_qc_gating": str(display_fill_qc_gating),
+        "display_fill_is_official_accuracy": False,
         "qc_calibration_path": str(qc_calibration.get("calibration_path", "")),
         "stage3_agent_path": stage3_row.get("agent_path", ""),
     }
@@ -2728,6 +3263,7 @@ def process_frame(
         "role_conflict_diagnostics": role_conflict_diagnostics,
         "vertical_localization_diagnostics": vertical_localization_diagnostics,
         "cma_fusion_diagnostics": cma_fusion_diagnostics,
+        "display_fill_diagnostics": display_fill_diagnostics,
         "refine_metrics": refine_metrics,
         "pressure_test_note": pressure_test_note,
     }
@@ -2741,6 +3277,11 @@ def process_frame(
             C4_RECON_V: recon["recon_v"],
             C4_RECON_CONF: recon["recon_conf"],
             C4_RECON_MASK: recon["recon_mask"],
+            C4_DISPLAY_U: display_field["display_u"],
+            C4_DISPLAY_V: display_field["display_v"],
+            C4_DISPLAY_CONF: display_field["display_conf"],
+            C4_DISPLAY_MASK: display_field["display_mask"],
+            C4_DISPLAY_SOURCE: display_field["display_source"],
             C4_C_TIME_3D: recon["c_time"],
             C4_C_SPACE_3D: recon["c_space"],
             C4_C_JOINT_3D: recon["c_joint"],
@@ -2758,6 +3299,7 @@ def process_frame(
             "stage4_role_conflict_diagnostics_json": np.array(json.dumps(role_conflict_diagnostics, ensure_ascii=False)),
             "stage4_vertical_localization_diagnostics_json": np.array(json.dumps(vertical_localization_diagnostics, ensure_ascii=False)),
             "stage4_cma_fusion_diagnostics_json": np.array(json.dumps(cma_fusion_diagnostics, ensure_ascii=False)),
+            C4_DISPLAY_FILL_DIAGNOSTICS_JSON: np.array(json.dumps(display_fill_diagnostics, ensure_ascii=False)),
             "stage4_leakage_report_json": np.array(json.dumps(leakage_report, ensure_ascii=False)),
             "holdout_records_json": np.array(json.dumps(holdout_wind, ensure_ascii=False)),
         },
@@ -2783,6 +3325,7 @@ def process_frame(
         field_diagnostics=field_diagnostics,
         role_conflict_diagnostics=role_conflict_diagnostics,
         cma_diagnostics=cma_fusion_diagnostics,
+        display_fill_diagnostics=display_fill_diagnostics,
         leakage_report=leakage_report,
         pressure_test_note=pressure_test_note,
     )
@@ -2802,7 +3345,16 @@ def process_frame(
         **field_diagnostics,
         **role_conflict_diagnostics,
         **vertical_localization_diagnostics,
+        **srha_horizontal_diagnostics,
         **cma_fusion_diagnostics,
+        "display_fill_mode": str(display_fill_mode),
+        "display_fill_source": str(display_fill_source),
+        "display_fill_confidence_cap": float(display_fill_confidence_cap),
+        "display_fill_qc_gating": str(display_fill_qc_gating),
+        "display_fill_is_official_accuracy": False,
+        "display_fill_active_voxels": int(display_fill_diagnostics.get("display_active_voxels", 0)),
+        "display_fill_background_voxels": int(display_fill_diagnostics.get("display_background_voxels", 0)),
+        "display_fill_diagnostics": display_fill_diagnostics,
         "confidence_mode": str(confidence_mode),
         "localization_kernel": str(localization_kernel),
         "localization_policy": str(localization_policy),
@@ -2827,6 +3379,7 @@ def process_frame(
         "conflict_context_factor": float(conflict_context_factor),
         "cma_fusion_mode": str(cma_fusion_mode),
         "cma_background_weight": float(cma_background_weight),
+        "cma_background_weight_mode": str(cma_background_weight_mode),
         "cma_confidence_source": str(cma_confidence_source),
         "cma_confidence_cap": float(cma_confidence_cap),
         "cma_pseudo_source": str(cma_pseudo_source),
@@ -2951,6 +3504,8 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.cma_proxy_dir),
             "--cma-background-weight",
             str(args.cma_background_weight),
+            "--cma-background-weight-mode",
+            str(args.cma_background_weight_mode),
             "--cma-confidence-source",
             str(args.cma_confidence_source),
             "--cma-confidence-cap",
@@ -2963,6 +3518,16 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.cma_pseudo_source),
             "--cma-qc-gating",
             str(args.cma_qc_gating),
+            "--display-fill-mode",
+            str(args.display_fill_mode),
+            "--display-fill-cma-proxy-dir",
+            str(args.display_fill_cma_proxy_dir),
+            "--display-fill-source",
+            str(args.display_fill_source),
+            "--display-fill-confidence-cap",
+            str(args.display_fill_confidence_cap),
+            "--display-fill-qc-gating",
+            str(args.display_fill_qc_gating),
             "--num-workers",
             str(workers),
             "--shard-id",
@@ -3036,12 +3601,22 @@ def main() -> None:
     parser.add_argument("--cma-proxy-dir", type=Path, default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/cma_ra_virtual_radial_3dvar"))
     parser.add_argument("--cma-proxy-npz", type=Path)
     parser.add_argument("--cma-background-weight", type=float, default=0.10)
+    parser.add_argument("--cma-background-weight-mode", choices=sorted(CMA_BACKGROUND_WEIGHT_MODES), default="fixed")
     parser.add_argument("--cma-confidence-source", choices=sorted(CMA_CONFIDENCE_SOURCES), default="dense")
     parser.add_argument("--cma-confidence-cap", type=float, default=0.35)
     parser.add_argument("--cma-time-confidence", type=float, default=0.70)
     parser.add_argument("--cma-space-confidence", type=float, default=0.70)
     parser.add_argument("--cma-pseudo-source", choices=sorted(CMA_PSEUDO_SOURCES), default="reanalysis")
     parser.add_argument("--cma-qc-gating", choices=sorted(CMA_QC_GATING_MODES), default="off")
+    parser.add_argument("--display-fill-mode", choices=sorted(DISPLAY_FILL_MODES), default="off")
+    parser.add_argument(
+        "--display-fill-cma-proxy-dir",
+        type=Path,
+        default=Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_three_method_compare_20260531/cma_proxy"),
+    )
+    parser.add_argument("--display-fill-source", choices=sorted(DISPLAY_FILL_SOURCES), default="cma_reanalysis")
+    parser.add_argument("--display-fill-confidence-cap", type=float, default=0.20)
+    parser.add_argument("--display-fill-qc-gating", choices=sorted(CMA_QC_GATING_MODES), default="strict_temporal")
     parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--shard-id", type=int, default=-1)
     parser.add_argument("--shard-summary", type=Path)
@@ -3112,12 +3687,18 @@ def main() -> None:
                 cma_proxy_dir=args.cma_proxy_dir,
                 cma_proxy_npz=args.cma_proxy_npz,
                 cma_background_weight=float(args.cma_background_weight),
+                cma_background_weight_mode=str(args.cma_background_weight_mode),
                 cma_confidence_source=str(args.cma_confidence_source),
                 cma_confidence_cap=float(args.cma_confidence_cap),
                 cma_time_confidence=float(args.cma_time_confidence),
                 cma_space_confidence=float(args.cma_space_confidence),
                 cma_pseudo_source=str(args.cma_pseudo_source),
                 cma_qc_gating=str(args.cma_qc_gating),
+                display_fill_mode=str(args.display_fill_mode),
+                display_fill_cma_proxy_dir=args.display_fill_cma_proxy_dir,
+                display_fill_source=str(args.display_fill_source),
+                display_fill_confidence_cap=float(args.display_fill_confidence_cap),
+                display_fill_qc_gating=str(args.display_fill_qc_gating),
             )
         )
         summaries[-1]["num_workers"] = int(args.num_workers)

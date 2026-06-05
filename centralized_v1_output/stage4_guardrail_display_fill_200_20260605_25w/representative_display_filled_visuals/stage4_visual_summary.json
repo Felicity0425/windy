@@ -1,0 +1,38 @@
+[
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/frame_20260125124200_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260125124200_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260125124200_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260125124200_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/frame_20260202013600_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260202013600_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260202013600_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260202013600_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/frame_20260205190000_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260205190000_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260205190000_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260205190000_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/frame_20260206074200_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260206074200_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260206074200_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260206074200_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/frame_20260210011200_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260210011200_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260210011200_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260210011200_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/frame_20260223133000_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260223133000_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260223133000_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/20260223133000_centralized_stage4_diagnostics.png"
+  }
+]

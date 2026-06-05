@@ -1,0 +1,12 @@
+group_type,group,points,mean_delta_vector_error_mps,median_delta_vector_error_mps,p90_delta_vector_error_mps,max_delta_vector_error_mps,mean_delta_floor10_relative_error,candidate_worse_gt5mps_points,candidate_better_gt5mps_points,baseline_label,candidate_label
+all,all_holdout_points,530,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+speed,0-5mps_calm,34,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+speed,5-15mps_light,129,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+speed,15-30mps_moderate,205,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+speed,30-60mps_strong,137,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+speed,60mps_plus_extreme,25,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+altitude,0-3km,39,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+altitude,3-6km,47,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+altitude,6-9km,85,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+altitude,9-12km,137,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun
+altitude,12km+,222,0.0,0.0,0.0,0.0,0.0,0,0,tp26_existing,tp26_rerun

@@ -809,3 +809,629 @@ EMADDC height-prior obs_error_weighted 没有在当前最优链路上带来稳�
 ```text
 /data/LFT-W02_data/pengxu/centralized_v1_output/stage4_error_resolution_narrow_grid_20260602_25w/reports/run_best_full_25w.sh
 ```
+
+## 10. 2026-06-05 SRHA + Sparse Temporal CMA/NWP 结果
+
+本节是 2026-06-05 新窗口执行结果，覆盖上面旧的下一步推荐口径。用户已确认当前主基线固定为
+`tp26_thr11_preserve`，不是 `timepower_2_0` 或 `tp22_thr12_preserve`。所有结果仍只使用：
+
+```text
+truth = current aircraft wind_records strict holdout
+strict_holdout_no_leakage = True
+motion_used_as_wind = False
+CMA/GFS/ERA = weak background / prior only, never truth
+```
+
+### 10.1 已改代码
+
+主要修改文件：
+
+```text
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+stage/centralized_v1/core/centralized_stage4_error_source_decomposition.py
+```
+
+实现内容：
+
+```text
+1. support_role_height_aware 进入 metrics-only adaptive selector。
+2. support_role_height_aware 新增 per-observation horizontal sigma/radius factor：
+   - alt >= 12000m、speed >= 60m/s、role gap >= 18m/s、stale context、dense current support 时收窄。
+   - 只有 current_count <= 2、context fresh、local consistency stable、role gap low 且无高空/强风/stale 风险时才允许扩大。
+3. support_role_height_aware 同步影响 support_adaptive vertical localization，对 role gap / stale context 做垂直收窄。
+4. CSV 新增 SRHA 诊断：
+   srha_horizontal_sigma_factor_mean/min/max
+   srha_horizontal_reason_counts
+   srha_high_altitude_gate_count
+   srha_high_speed_gate_count
+   srha_role_gap_gate_count
+   srha_stale_context_gate_count
+   srha_sparse_fresh_widen_gate_count
+   srha_dense_current_gate_count
+5. 新增 CMA/NWP background weight mode:
+   cma_background_weight_mode = sparse_temporal_gated
+6. 新增 strict temporal gating：
+   temporal_conf >= 0.55
+   rapid-change flag must be 0 when available
+   temporal-change-speed must stay below calibrated threshold when available
+7. sparse_temporal_gated 只在 sparse/no-current-support 且已有 localized aircraft support 的体素上给背景权重；
+   current-supported / non-sparse 区域背景权重强制为 0。
+8. CLI、parent shards、metrics-only 全链路透传 --cma-background-weight-mode。
+9. CSV 新增 CMA gate 诊断：
+   cma_background_weight_mode
+   cma_background_gate_active_fraction
+   cma_background_sparse_current_gate_fraction
+   cma_background_localized_support_gate_fraction
+   cma_background_no_current_gate_voxels
+   cma_strict_temporal_gate_active_fraction
+10. 修正 error_source_decomposition markdown 文案：
+    候选劣化时不再错误写成 "improves"。
+```
+
+静态检查：
+
+```text
+python -m py_compile
+  stage/centralized_v1/core/centralized_stage4_ground_recon.py
+  stage/centralized_v1/core/centralized_stage4_sensitivity.py
+  stage/centralized_v1/core/centralized_stage4_error_source_decomposition.py
+
+结果：通过
+```
+
+smoke test：
+
+```text
+SRHA 2 帧 smoke:
+  rows = 2
+  strict_holdout_no_leakage = True
+  motion_used_as_wind = False
+  srha_horizontal_sigma_factor_mean 有输出
+
+CMA sparse_temporal_gated 1 帧 smoke:
+  cma_background_weight_mode = sparse_temporal_gated
+  cma_background_gate_active_fraction = 0.008180
+  cma_background_localized_support_gate_fraction = 0.008297
+  strict_holdout_no_leakage = True
+  motion_used_as_wind = False
+```
+
+### 10.2 Phase 1: tp26 vs SRHA
+
+输出目录：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_srha_tail_200_20260605_25w
+
+baseline:
+  baseline_tp26_thr11_preserve
+
+candidate:
+  tp26_srha_tail
+
+pairwise:
+  analysis/tp26_vs_srha/tp26_vs_srha.md
+
+error-source / top-tail:
+  analysis/tp26_vs_srha_error_source/tp26_vs_srha.md
+  analysis/tp26_vs_srha_error_source/tp26_vs_srha_tail_audit.csv
+```
+
+运行口径：
+
+```text
+frames = 200
+holdout_points = 530
+num_workers = 25
+baseline = tp26_thr11_preserve
+candidate = tp26 + support_role_height_aware
+candidate grid = 8:4,10:5,12:6
+vertical_localization_policy = support_adaptive
+```
+
+Phase 1 指标：
+
+| method | weighted RMSE | weighted MAE | frame RMSE | frame P95 | frame P99 | point P95 | 12km+ vector RMSE | 12km+ P95 | max point |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `tp26_thr11_preserve` | 14.769036 | 6.854454 | 8.224309 | 27.986111 | 58.783770 | 23.889507 | 19.917698 | 35.523490 | 180.131789 |
+| `tp26_srha_tail` | 20.148615 | 8.206679 | 10.246083 | 34.727103 | 86.322454 | 31.540111 | 28.454526 | 45.670509 | 253.572554 |
+
+SRHA 诊断汇总：
+
+```text
+mean(srha_horizontal_sigma_factor_mean over frames) = 0.822454
+srha_high_altitude_gate_count total = 69113
+srha_high_speed_gate_count total = 6156
+srha_role_gap_gate_count total = 28145
+srha_stale_context_gate_count total = 34232
+srha_sparse_fresh_widen_gate_count total = 1849
+srha_dense_current_gate_count total = 2517
+```
+
+promotion rule 结论：
+
+```text
+FAIL, do not promote SRHA.
+
+原因：
+weighted RMSE: 14.769036 -> 20.148615, worse by 5.379579 m/s
+frame P95:     27.986111 -> 34.727103, worse
+frame P99:     58.783770 -> 86.322454, worse
+12km+ RMSE:    19.917698 -> 28.454526, worse by 8.536828 m/s
+```
+
+top-tail 结论：
+
+```text
+SRHA 确实触发了高空/强风/role/stale gate，但当前实现过于激进。
+最坏新增长尾来自 12km+ role_conflict：
+  20260202013600 z/y/x=29/281/519
+  baseline error 18.236828 -> SRHA error 253.572554
+
+Phase 2 baseline 因此继续使用 tp26_thr11_preserve。
+```
+
+### 10.3 Phase 2: tp26 vs Sparse Temporal CMA/NWP
+
+输出目录：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_sparse_temporal_cma_200_20260605_25w
+
+baseline:
+  baseline_tp26_thr11_preserve
+
+candidate:
+  tp26_sparse_temporal_cma
+
+pairwise:
+  analysis/tp26_vs_sparse_temporal_cma/tp26_vs_sparse_temporal_cma.md
+
+error-source / top-tail:
+  analysis/tp26_vs_sparse_temporal_cma_error_source/tp26_vs_sparse_temporal_cma.md
+  analysis/tp26_vs_sparse_temporal_cma_error_source/tp26_vs_sparse_temporal_cma_tail_audit.csv
+```
+
+运行口径：
+
+```text
+frames = 200
+holdout_points = 530
+num_workers = 25
+baseline = tp26_thr11_preserve
+candidate = tp26 + cma_reanalysis_background
+cma_proxy_dir = centralized_v1_output/stage4_three_method_compare_20260531/cma_proxy
+cma_background_weight = 0.01
+cma_background_weight_mode = sparse_temporal_gated
+cma_confidence_source = temporal_conf
+cma_qc_gating = strict_temporal
+cma_confidence_cap = 0.20
+```
+
+Phase 2 指标：
+
+| method | weighted RMSE | weighted MAE | frame RMSE | frame P95 | frame P99 | point P95 | 12km+ vector RMSE | 12km+ P95 | max point |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `tp26_thr11_preserve` | 14.769036 | 6.854454 | 8.224309 | 27.986111 | 58.783770 | 23.889507 | 19.917698 | 35.523490 | 180.131789 |
+| `tp26_sparse_temporal_cma` | 14.852237 | 7.040594 | 8.408913 | 26.226386 | 53.532347 | 26.210852 | 19.951609 | 35.522361 | 179.636076 |
+
+CMA gate 诊断：
+
+| diagnostic | mean | min | max |
+| --- | ---: | ---: | ---: |
+| `cma_background_gate_active_fraction` | 0.007787 | 0.003273 | 0.015512 |
+| `cma_background_sparse_current_gate_fraction` | 0.007787 | 0.003273 | 0.015512 |
+| `cma_background_localized_support_gate_fraction` | 0.009937 | 0.004267 | 0.017334 |
+| `cma_strict_temporal_gate_active_fraction` | 0.854742 | 0.705739 | 1.000000 |
+| `cma_background_gate_mean` | 0.007666 | 0.003230 | 0.015360 |
+
+gate 结论：
+
+```text
+sparse_temporal_gated 不是全场融合。
+background active fraction 平均约 0.78%，最大约 1.55%。
+非 sparse/current-supported 区域权重被强制压到 0。
+```
+
+promotion rule 结论：
+
+```text
+FAIL, do not promote CMA/NWP candidate.
+
+原因：
+weighted RMSE: 14.769036 -> 14.852237, worse by 0.083201 m/s
+weighted MAE:  6.854454 -> 7.040594, worse by 0.186140 m/s
+12km+ RMSE:    19.917698 -> 19.951609, worse by 0.033911 m/s
+
+虽然 frame P95/P99 和 max point 有改善：
+frame P95: 27.986111 -> 26.226386
+frame P99: 58.783770 -> 53.532347
+max point: 180.131789 -> 179.636076
+
+但验收规则要求 weighted RMSE、P95、P99、12km+ 全部不劣化，因此不推广。
+```
+
+top-tail 结论：
+
+```text
+CMA weak background 对最极端 12km+ 点有轻微缓和：
+  20260223133000 z/y/x=29/345/498
+  baseline error 180.131789 -> CMA error 179.636076
+
+但它也在部分低空/中低空 sparse 点引入新误差：
+  20260210011200 z/y/x=10/295/510, 3-6km
+  baseline error 10.363190 -> CMA error 34.218618
+
+这说明当前 CMA proxy 在 sparse 区域仍需要更细的 height / speed / source-role gate，
+不能因为 P95/P99 下降就升级默认。
+```
+
+### 10.4 Wind-scale impact: 绝对误差必须结合原始风速/风向解释
+
+补充结论：RMSE/MSE 是必要主指标，但不能单独解释影响大小。相同的 `8 m/s` 误差：
+
+```text
+1. 在 80-100 m/s 高空强风中，可能只是 8%-10% 相对误差。
+2. 在 5-15 m/s 轻风中，可能已经是 50%-160% 相对误差。
+3. 在近静风中，风向本身不稳定，方向误差不应直接参与均值。
+```
+
+因此新增 wind-scale impact 分析脚本：
+
+```text
+stage/centralized_v1/core/centralized_stage4_wind_scale_impact.py
+```
+
+分析定义：
+
+```text
+relative_error_ratio = vector_error / gt_speed
+floor10_relative_error = vector_error / max(gt_speed, 10)
+direction_error_deg = abs circular angle difference from atan2(v, u)
+
+direction_error_deg exclusion:
+  gt_speed < 5 m/s or pred_speed < 1 m/s -> NA
+```
+
+新增输出：
+
+```text
+SRHA wind-scale:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_srha_tail_200_20260605_25w/analysis/tp26_vs_srha_wind_scale/tp26_vs_srha_wind_scale.md
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_srha_tail_200_20260605_25w/analysis/tp26_vs_srha_wind_scale/tp26_vs_srha_wind_scale_method_groups.csv
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_srha_tail_200_20260605_25w/analysis/tp26_vs_srha_wind_scale/tp26_vs_srha_wind_scale_delta_groups.csv
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_srha_tail_200_20260605_25w/analysis/tp26_vs_srha_wind_scale/tp26_vs_srha_wind_scale_top_candidate_worsening.csv
+
+CMA wind-scale:
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_sparse_temporal_cma_200_20260605_25w/analysis/tp26_vs_sparse_temporal_cma_wind_scale/tp26_vs_sparse_temporal_cma_wind_scale.md
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_sparse_temporal_cma_200_20260605_25w/analysis/tp26_vs_sparse_temporal_cma_wind_scale/tp26_vs_sparse_temporal_cma_wind_scale_method_groups.csv
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_sparse_temporal_cma_200_20260605_25w/analysis/tp26_vs_sparse_temporal_cma_wind_scale/tp26_vs_sparse_temporal_cma_wind_scale_delta_groups.csv
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_sparse_temporal_cma_200_20260605_25w/analysis/tp26_vs_sparse_temporal_cma_wind_scale/tp26_vs_sparse_temporal_cma_wind_scale_top_candidate_worsening.csv
+```
+
+wind-scale 完整性检查：
+
+```text
+aligned points = 530
+strict_holdout_no_leakage = True
+motion_used_as_wind = False
+truth speed bins sum = 530
+```
+
+SRHA 按 truth speed 分层：
+
+| truth speed bin | points | baseline RMSE | SRHA RMSE | mean delta | worse >5m/s | floor10 rel delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0-5mps_calm` | 34 | 5.582881 | 5.400053 | -0.257366 | 0 | -0.025737 |
+| `5-15mps_light` | 129 | 5.195877 | 5.183379 | -0.098104 | 2 | -0.006038 |
+| `15-30mps_moderate` | 205 | 8.727973 | 10.442562 | 0.930695 | 14 | 0.043517 |
+| `30-60mps_strong` | 137 | 12.312020 | 16.553500 | 1.668888 | 10 | 0.045909 |
+| `60mps_plus_extreme` | 25 | 54.655257 | 77.668477 | 12.746208 | 5 | 0.198031 |
+
+SRHA 风速/风向解释：
+
+```text
+SRHA 的问题不是普通弱风，而是高空强风和 role-conflict 下的灾难性方向/幅值错误。
+最坏点：
+  20260202013600 z/y/x=29/281/519, 12km+, gt_speed=60 m/s
+  baseline error 18.236828 -> SRHA error 253.572554
+  candidate relative_error_ratio = 4.226209
+  candidate direction_error_deg = 162.97
+
+这不是“强风下差 8 m/s 可接受”的情况，而是方向几乎反向且幅值严重偏离。
+```
+
+CMA 按 truth speed 分层：
+
+| truth speed bin | points | baseline RMSE | CMA RMSE | mean delta | worse >5m/s | floor10 rel delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0-5mps_calm` | 34 | 5.582881 | 5.524242 | -0.054784 | 0 | -0.005478 |
+| `5-15mps_light` | 129 | 5.195877 | 6.057278 | 0.305396 | 2 | 0.024890 |
+| `15-30mps_moderate` | 205 | 8.727973 | 8.980202 | 0.230951 | 4 | 0.012310 |
+| `30-60mps_strong` | 137 | 12.312020 | 12.273071 | 0.093998 | 1 | 0.001988 |
+| `60mps_plus_extreme` | 25 | 54.655257 | 54.396091 | 0.035925 | 0 | 0.001260 |
+
+CMA 风速/风向解释：
+
+```text
+CMA 的绝对 P95/P99 有改善，但 wind-scale 暴露出更关键风险：
+  20260210011200 z/y/x=10/295/510, 3-6km, gt_speed=13 m/s
+  baseline error 10.363190 -> CMA error 34.218618
+  candidate relative_error_ratio = 2.632201
+  candidate direction_error_deg = 97.95
+
+这个点说明：在轻风/中低空 sparse 区域，CMA weak background 可能把小风场拉成严重错误。
+这种错误比高风速下 8 m/s 绝对差异更不可接受。
+```
+
+升级后的下一轮 promotion gate：
+
+```text
+仍必须满足原 gate：
+  weighted RMSE 不劣化
+  P95 不劣化
+  P99 不劣化
+  12km+ vector RMSE 不劣化
+
+新增 wind-scale guard：
+  5-15mps_light bin 不允许 RMSE/MAE 明显劣化
+  0-5mps_calm 和 5-15mps_light 不允许新增 delta > 5 m/s 的 top-tail
+  floor10_relative_error_mae 不允许劣化
+  低风速点 direction_error_deg 只作解释，不作均值硬门槛
+  若 light/moderate wind 出现 candidate relative_error_ratio > 2 且 delta > 5 m/s，候选直接失败
+```
+
+下一步建议相应调整：
+
+```text
+1. 不继续调当前 SRHA shrink/widen 因子。
+2. CMA/NWP 只保留 sparse_temporal_gated 实现和诊断列，不升默认。
+3. 下一轮先做 guardrail/reporting，再做模型改动：
+   - 把 truth_speed_bin、floor10_relative_error、direction_error_deg 写入正式 pairwise/checklist。
+   - 对 3-6km、5-15mps、15-30mps 的新坏点单独设失败门槛。
+   - CMA gate 需要额外 height/speed/source-role guard，特别是 3-6km light-wind current-supported sparse 点。
+```
+
+### 10.5 Skills GitHub 状态
+
+按用户确认，skills 只处理独立仓库，不纳入 windy 主仓库：
+
+```text
+local repo:
+/data/LFT-W02_data/pengxu/nature-skills
+
+remote:
+https://github.com/Yuan1z0825/nature-skills.git
+
+branch:
+main
+
+HEAD:
+c9b874a675e29e40fed88af89509092665d5a236
+
+upstream:
+c9b874a675e29e40fed88af89509092665d5a236
+
+status:
+clean, no ahead commit
+```
+
+结论：
+
+```text
+nature-skills 当前已与 GitHub origin/main 对齐，没有本地改动需要提交或推送。
+未把 /data/LFT-W02_data/pengxu/nature-skills 加入 windy 主仓库；
+windy 主仓库里仍保持 nature-skills/ 为 untracked 状态。
+```
+
+### 10.6 当前默认与下一步
+
+当前默认保持：
+
+```text
+tp26_thr11_preserve
+
+--confidence-mode diagnostic_weighted
+--physics-constraint-mode pydda_3dvar_proxy
+--localization-policy diagnostic_adaptive_v3
+--localization-candidate-grid 8:4,10:5
+--current-weight-boost 2.0
+--context-weight-scale 0.5
+--context-time-conf-power 2.6
+--role-conflict-mode current_priority_adaptive
+--conflict-speed-threshold-mps 11.0
+--conflict-context-factor 0.25
+--vertical-risk-mode preserve_strong_layers
+--vertical-gradient-preserve-weight 0.12
+--vertical-context-mismatch-damping 0.35
+--num-workers 25
+```
+
+不要推广：
+
+```text
+support_role_height_aware
+sparse_temporal_gated CMA/NWP
+```
+
+下一步建议：
+
+```text
+1. SRHA 不要继续用当前 shrink/widen 因子直接放大到默认；
+   需要先按 holdout-nearest distance、nearest role、vertical_speed_gap、truth_speed_bin 做更细 guard。
+2. CMA/NWP 可以保留 sparse_temporal_gated 实现和诊断列，
+   但后续候选必须额外排除 3-6km 新长尾，并对 role_gap/source_role 加更硬 gate。
+3. 后续文档引用 decomposition markdown 时，以修正后的 "Candidate vs Baseline" 版本为准。
+```
+
+### 10.7 2026-06-05 formal guardrail + display-filled visualization
+
+本轮已把 promotion guardrail 从“临时分析口径”固化进正式 pairwise/checklist，并新增只服务展示层的
+display-filled 风场字段。默认模型仍是 `tp26_thr11_preserve`，SRHA 和 CMA sparse-temporal
+candidate 仍不升默认。
+
+代码入口：
+
+```text
+stage/centralized_v1/core/centralized_stage4_pairwise_frame_compare.py
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+stage/centralized_v1/core/centralized_report_stage4_slices.py
+stage/centralized_v1/core/centralized_stage4_representative_wind_table.py
+```
+
+新增正式 pairwise/checklist 输出：
+
+```text
+*_wind_scale_method_groups.csv
+*_wind_scale_delta_groups.csv
+*_promotion_checklist.csv
+*_promotion_checklist.md
+```
+
+point-level wind-scale 字段已进入 pairwise：
+
+```text
+gt_speed_mps
+truth_speed_bin
+baseline/candidate relative_error_ratio
+baseline/candidate floor10_relative_error
+baseline/candidate direction_error_deg
+delta_vector_error
+```
+
+promotion gate 固定为全部同时满足：
+
+```text
+strict_holdout_no_leakage == True
+motion_used_as_wind == False
+candidate weighted RMSE <= baseline
+candidate frame P95 <= baseline
+candidate frame P99 <= baseline
+candidate 12km+ vector RMSE <= baseline
+candidate 5-15mps_light vector RMSE <= baseline
+candidate 5-15mps_light vector MAE <= baseline
+candidate overall floor10_relative_error_mae <= baseline
+light/moderate wind 中若任一点 relative_error_ratio > 2 且 delta_vector_error > 5 m/s，直接 FAIL
+```
+
+200 帧、25 worker 复跑入口：
+
+```text
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/
+```
+
+静态检查已通过：
+
+```text
+python -m py_compile
+centralized_stage4_ground_recon.py
+centralized_stage4_sensitivity.py
+centralized_stage4_pairwise_frame_compare.py
+centralized_stage4_wind_scale_impact.py
+centralized_report_stage4_slices.py
+centralized_stage4_representative_wind_table.py
+```
+
+formal checklist 结果：
+
+| comparison | checklist | result | key reason |
+| --- | --- | --- | --- |
+| tp26 existing vs 200-frame rerun | `centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/analysis/tp26_existing_vs_rerun/tp26_existing_vs_rerun_promotion_checklist.md` | PASS | metrics identical; no drift. |
+| tp26 vs SRHA | `centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/analysis/tp26_vs_srha_formal_guardrail/tp26_vs_srha_formal_guardrail_promotion_checklist.md` | FAIL | weighted RMSE, P95, P99, 12km+, floor10 relative error and light/moderate tail fail. |
+| tp26 vs sparse-temporal CMA | `centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/analysis/tp26_vs_sparse_temporal_cma_formal_guardrail/tp26_vs_sparse_temporal_cma_formal_guardrail_promotion_checklist.md` | FAIL | weighted RMSE, 12km+, light wind RMSE/MAE, floor10 relative error and light/moderate tail fail. |
+
+关键数值：
+
+```text
+tp26 existing vs rerun:
+weighted RMSE 14.769035584178605 -> 14.769035584178605
+frame P95     27.986110980146194 -> 27.986110980146194
+frame P99     58.78377017267204  -> 58.78377017267204
+
+tp26 vs SRHA:
+weighted RMSE 14.769035584178605 -> 20.148614706594163
+frame P95     27.986110980146194 -> 34.72710322612249
+frame P99     58.78377017267204  -> 86.32245410423373
+12km+ RMSE    19.917697780481415 -> 28.454525761392187
+
+tp26 vs sparse-temporal CMA:
+weighted RMSE 14.769035584178605 -> 14.852237035605219
+12km+ RMSE    19.917697780481415 -> 19.951608908326953
+light RMSE    5.195876810373414  -> 6.057278442944428
+light MAE     4.185283061205855  -> 4.490679519582376
+```
+
+display-filled 字段只用于展示层补全：
+
+```text
+stage4_display_u_3d
+stage4_display_v_3d
+stage4_display_confidence_3d
+stage4_display_mask_3d
+stage4_display_source_3d
+stage4_display_fill_diagnostics_json
+```
+
+语义边界：
+
+```text
+recon_u/v/conf/mask = official tp26 strict reconstruction
+stage4_display_* = official recon where recon_mask true + low-confidence weak background elsewhere
+CMA/background never enters official point evaluation
+display_fill_is_official_accuracy = False
+```
+
+代表帧 display-filled NPZ：
+
+```text
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_npz/
+```
+
+代表帧全图彩色可视化：
+
+```text
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/
+```
+
+代表帧：
+
+```text
+20260206074200
+20260125124200
+20260205190000
+20260210011200
+20260202013600
+20260223133000
+```
+
+代表帧风速/风向差异表：
+
+```text
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/representative_wind_speed_direction_table.csv
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/representative_display_filled_visuals/representative_wind_speed_direction_table.md
+```
+
+表格字段包括：
+
+```text
+gt_speed_mps
+pred_speed_mps
+speed_delta_mps
+gt_direction_deg
+pred_direction_deg
+direction_error_deg
+vector_error_mps
+relative_error_ratio
+floor10_relative_error
+truth_speed_bin
+```
+
+observation-error 口径修正：
+
+```text
+de Haan / EMADDC 的 sigma 只能作为 aircraft wind observation-error prior 或 QC 诊断权重。
+本项目当前 13.64 m/s 应解释为 local consistency / representativeness sigma。
+任何 sigma 都不能从 Stage4 strict-holdout RMSE/MAE 里扣除。
+location 的 u_motion/v_motion 仍是 aircraft ground motion，不是 atmospheric wind。
+```
