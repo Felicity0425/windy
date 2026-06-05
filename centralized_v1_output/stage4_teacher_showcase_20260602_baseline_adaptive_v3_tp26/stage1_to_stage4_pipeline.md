@@ -897,7 +897,104 @@ centralized_v1_output/stage4_error_resolution_micro_grid_20260602_12w/reports/mi
 7. 补一句历史和后续：`TimePower15` 是传统主线 baseline；CMA/PINN/Diffusion 是后续背景/残差/不确定性路线，不是 truth。
 8. 讲限制：Stage4 是稀疏 aircraft wind reconstruction，不是 30 m operational low-level wind-shear warning system。
 
-## 8. 参考文献清单与借用口径
+## 8. 2026-06-05 新增 demo：动态垂直分层与弱 NWP 背景
+
+这次新增了一个小 demo，用同一组 25 个抽样 frame、25 路并行、同一 strict holdout 口径验证两个问题：
+
+```text
+1. 高空更细的动态垂直 localization 是否能提高重构？
+2. OI / 3DVar-style weak NWP background 是否能超过 aircraft-only？
+```
+
+输出位置：
+
+```text
+centralized_v1_output/stage4_dynamic_layer_nwp_oi_demo_20260605/
+```
+
+评价边界仍然不变：
+
+```text
+truth = current aircraft wind_records strict holdout
+holdout 在融合前移除
+CMA/GFS/ERA 只能作为 weak background / prior
+location/motion 不作为 wind truth
+radar PNG 不作为 Doppler wind
+```
+
+### 8.1 动态垂直分层结果
+
+当前代码里的“动态分层”更准确地说是 Stage4 的动态垂直 localization：高空、强风、稠密 current observation 或 stale context 条件下，缩小垂直影响半径和 sigma。它不是重新生成 Stage2 非均匀高度网格。
+
+25-frame demo 结果：
+
+| branch | vertical loc | holdout points | RMSE | MAE | P95 | max |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `dynamic_fixed_aircraft_only` | fixed | 58 | 26.589947 | 9.812196 | 40.764004 | 180.131789 |
+| `dynamic_support_adaptive_aircraft_only` | support_adaptive | 58 | 26.742449 | 9.876736 | 39.704757 | 180.613923 |
+
+解释：
+
+```text
+support_adaptive vertical sigma factor mean = 0.865060
+```
+
+说明动态垂直 localization 确实让高空/强风等条件下的垂直影响范围变窄，减少跨层过平滑倾向。但这次小 demo 中，它没有降低总 RMSE/MAE，只略微降低 P95。因此暂时不能把它升为 official 默认，只能作为后续候选或分层触发策略继续调。
+
+### 8.2 OI / 3DVar-style weak background 结果
+
+本地没有发现可直接消费的 GFS/ERA ROI NPZ，所以 demo 使用已有 CMA proxy/reanalysis 背景验证 weak NWP background 口径。CMA 只进入 accumulator，aircraft holdout 仍是唯一 truth。
+
+| branch | background | holdout points | RMSE | MAE | P95 | max |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `dynamic_fixed_aircraft_only` | off | 58 | 26.589947 | 9.812196 | 40.764004 | 180.131789 |
+| `oi_weak_cma_background` | CMA weight 0.03 | 58 | 26.745099 | 9.905763 | 40.764000 | 180.159394 |
+| `oi_very_weak_cma_background` | CMA weight 0.01 | 58 | 26.639229 | 9.839657 | 40.764003 | 180.141075 |
+
+结论：
+
+```text
+weak CMA background 当前没有超过 aircraft-only。
+```
+
+这说明不能简单把 CMA/GFS/ERA 全场背景塞进主线。更合理的下一步是：
+
+1. 只在 sparse/no-current-support 区域启用弱背景。
+2. 按高度、区域、context time confidence 分层控制 background weight。
+3. 先做 200-frame strict holdout 再决定是否进入 official candidate。
+
+### 8.3 哪些论文可以直接对比
+
+| 文献方向 | 代表文献 | 可以直接比较 | 不能直接比较 |
+| --- | --- | --- | --- |
+| aircraft surveillance weather-field reconstruction | Sun et al. 2018, Meteo-Particle Model | aircraft-derived wind -> local weather/wind grid；可作为 aircraft-based reconstruction baseline。 | 文献通常用 Mode-S/ADS-B 推风和 NWP/reanalysis 验证，不等同于 current aircraft strict holdout。 |
+| aircraft-derived wind GPR/Kriging | Marinescu et al. 2022, PLOS ONE | GPR/Kriging 风场重构 baseline；适合下一步做统计对照。 | 文献多是局部 TMA/机场区域，评价口径常对 ERA5，不是全国 holdout。 |
+| Mode-S EHS observation error | de Haan 2016, AMT | aircraft wind 观测误差、QC、高度分层 sigma。 | 不能把文献观测误差当成本项目重构 RMSE 目标。 |
+| EMADDC operational aircraft weather observations | de Haan et al. 2025, AMT | QC、误差分层、业务 aircraft observation pipeline。 | 不是三维重构算法 RMSE baseline。 |
+| aircraft data in 4DVAR/NWP | Cardinali et al. 2003；Petersen 2016 | OI/3DVar/4DVar-style background+observation 思路。 | 评价目标是 NWP forecast/analysis impact，不是 holdout 点位重构。 |
+
+### 8.4 全国重构与局部 holdout
+
+本项目可以在全国境内网格上生成三维风场，但 official accuracy 只能在 current aircraft `wind_records` strict holdout 覆盖到的时空点上报告。也就是说：
+
+```text
+全国重构 = product footprint
+局部 holdout = validated accuracy footprint
+```
+
+不能说“全国所有格点都已经被 strict holdout 验证”。更合理的汇报口径是：
+
+```text
+我们在全国网格上生成风场；精度只在飞机风 holdout 覆盖到的局部时空点报告。
+对无飞机 holdout 的全国区域，只报告 coverage/confidence/background diagnostics，不报告 validated RMSE。
+```
+
+下一步做对比实验时，建议增加两个版本：
+
+1. 全国产品版：保留全国 recon、confidence、coverage。
+2. 局部论文对比版：选机场/TMA 或高密航路区域，对齐 Sun/Marinescu 这类局部论文。
+
+## 9. 参考文献清单与借用口径
 
 - WMO Aircraft-Based Observations Programme  
   https://wmo.int/aircraft-based-observations-programme

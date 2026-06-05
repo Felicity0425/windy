@@ -20,6 +20,8 @@ CONFIG_COLUMNS = [
     "kernel",
     "confidence_mode",
     "physics_constraint_mode",
+    "localization_policy",
+    "localization_candidate_grid",
     "localization_radius_xy",
     "localization_sigma_xy",
     "localization_radius_z",
@@ -173,7 +175,7 @@ def _classified_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _strata() -> list[tuple[str, bool, bool, Callable[[dict[str, Any]], bool]]]:
     return [
-        ("all_frames_original", False, True, lambda row: True),
+        ("all_frames_original", False, False, lambda row: True),
         ("eval_holdout_only", True, True, lambda row: _has_holdout(row)),
         ("no_holdout_unverified_reconstruction", False, False, lambda row: not _has_holdout(row)),
         ("single_holdout_pressure_test", True, True, lambda row: _holdout_count(row) == 1),
@@ -307,6 +309,19 @@ def _validation(aggregate_rows: list[dict[str, Any]], expected_frames: int) -> d
         "failures": [],
     }
     if expected_frames <= 0:
+        return validation
+    all_frame_rows = [row for row in aggregate_rows if row.get("stratum") == "all_frames_original"]
+    adaptive_split = any("adaptive" in str(row.get("localization_policy", "")) for row in all_frame_rows)
+    if adaptive_split:
+        frames = sum(_to_int(row.get("frames")) for row in all_frame_rows)
+        if frames != expected_frames:
+            validation["failures"].append(
+                {
+                    "stratum": "all_frames_original_adaptive_total",
+                    "frames": frames,
+                    "expected_frames": expected_frames,
+                }
+            )
         return validation
     for row in aggregate_rows:
         if row.get("stratum") != "all_frames_original":

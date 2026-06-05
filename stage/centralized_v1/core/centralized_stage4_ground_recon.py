@@ -65,7 +65,9 @@ from stage.centralized_v1.configs.centralized_v1_contract import (  # noqa: E402
 STRICT_STAGE4_OUTPUT_DIR = Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_center_strict")
 EFFECTIVE_CONF_THRESHOLD = 1e-6
 LOCALIZATION_KERNELS = {"gaussian", "gaspari_cohn"}
-CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted"}
+LOCALIZATION_POLICIES = {"fixed", "diagnostic_adaptive", "diagnostic_adaptive_v3", "diagnostic_adaptive_regime_v4"}
+VERTICAL_LOCALIZATION_POLICIES = {"fixed", "support_adaptive"}
+CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted", "obs_error_weighted"}
 PHYSICS_CONSTRAINT_MODES = {"proxy", "pydda_3dvar_proxy"}
 ROLE_CONFLICT_MODES = {"off", "current_priority", "current_priority_adaptive"}
 VERTICAL_RISK_MODES = {"off", "preserve_strong_layers"}
@@ -110,6 +112,47 @@ DEFAULT_QC_CALIBRATION = {
     "role_conflict_adaptive_max_context_factor": 0.80,
     "vertical_risk_gradient_preserve_weight": 0.12,
     "vertical_risk_context_mismatch_damping": 0.35,
+    "vertical_localization_min_sigma_factor": 0.55,
+    "vertical_localization_max_sigma_factor": 1.25,
+    "vertical_localization_strong_speed_mps": 60.0,
+    "vertical_localization_high_altitude_m": 9000.0,
+    "vertical_localization_dense_count": 6.0,
+    "vertical_localization_sparse_count": 1.0,
+    "vertical_localization_stale_context_time_conf": 0.28,
+    "vertical_localization_strong_speed_factor": 0.75,
+    "vertical_localization_high_altitude_factor": 0.85,
+    "vertical_localization_dense_current_factor": 0.85,
+    "vertical_localization_stale_context_factor": 0.70,
+    "vertical_localization_sparse_weak_factor": 1.10,
+    "obs_error_sigma_floor_mps": 1.0,
+    "obs_error_sigma_default_mps": 8.0,
+    "obs_error_reference_sigma_mps": 8.0,
+    "obs_error_weight_min": 0.05,
+    "obs_error_weight_max": 4.0,
+    "obs_error_use_diagnostic_factor": 1.0,
+    "obs_error_altitude_bin_edges_m": [0.0, 3000.0, 6000.0, 9000.0, 12000.0, 15000.0, 20000.0],
+    "obs_error_speed_bin_edges_mps": [0.0, 15.0, 30.0, 45.0, 60.0, 90.0, 120.0, 200.0],
+    "obs_error_density_bin_edges": [0.0, 1.0, 3.0, 6.0, 12.0, 999999.0],
+    "obs_error_consistency_bin_edges": [0.0, 0.40, 0.65, 0.85, 1.10],
+    "obs_error_bin_sigma_mps": {},
+    "obs_error_altitude_bin_sigma_mps": {},
+    "obs_error_speed_bin_sigma_mps": {},
+    "obs_error_density_bin_sigma_mps": {},
+    "obs_error_consistency_bin_sigma_mps": {},
+    "adaptive_localization_low_current_support": 2.0,
+    "adaptive_localization_high_current_support": 8.0,
+    "adaptive_localization_high_context_support": 300.0,
+    "adaptive_localization_low_context_time_conf": 0.28,
+    "adaptive_localization_high_context_time_conf": 0.45,
+    "adaptive_localization_low_obs_error_weight": 0.90,
+    "adaptive_localization_high_role_conflict_ratio": 0.08,
+    "adaptive_localization_high_vertical_mismatch_ratio": 0.006,
+    "adaptive_localization_v3_guard_max_current_support": 8.0,
+    "adaptive_localization_v3_guard_max_context_time_conf": 0.57,
+    "adaptive_localization_v3_guard_min_local_consistency": 0.98,
+    "adaptive_localization_v3_sparse_guard_max_current_support": 2.0,
+    "adaptive_localization_v3_sparse_guard_max_context_time_conf": 0.52,
+    "adaptive_localization_v3_sparse_guard_min_local_consistency": 0.985,
     "references": [
         "https://amt.copernicus.org/articles/18/3341/2025/",
         "https://amt.copernicus.org/articles/9/4141/2016/",
@@ -283,6 +326,95 @@ def _diagnostic_factor_bundle(row: dict[str, Any], calibration: dict[str, Any]) 
     }
 
 
+def _bin_label(value: float, edges: list[Any]) -> str:
+    clean_edges = [_safe_float(v, 0.0) for v in edges]
+    if len(clean_edges) < 2:
+        return "bin0"
+    number = _safe_float(value, clean_edges[0])
+    for idx in range(len(clean_edges) - 1):
+        if clean_edges[idx] <= number < clean_edges[idx + 1]:
+            return f"bin{idx}"
+    return f"bin{max(0, len(clean_edges) - 2)}"
+
+
+def _obs_error_feature_labels(row: dict[str, Any], calibration: dict[str, Any]) -> dict[str, str]:
+    speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
+    altitude = _safe_float(row.get("alt_meters"), ALT_MIN + max(0, _safe_int(row.get("z"), 0)) * DELTA_ALT)
+    density_value = _safe_float(row.get("obs_count"), _safe_float(row.get("motion_count"), 1.0))
+    if density_value <= 0.0:
+        density_conf = _safe_float(row.get("density_conf_diagnostic"), 0.0)
+        density_value = -math.log(max(1e-6, 1.0 - min(0.999999, density_conf))) * _cal_float(calibration, "density_count_scale", 3.0)
+    consistency = _local_consistency_factor(row, calibration)
+    return {
+        "altitude": _bin_label(altitude, list(calibration.get("obs_error_altitude_bin_edges_m", []))),
+        "speed": _bin_label(speed, list(calibration.get("obs_error_speed_bin_edges_mps", []))),
+        "density": _bin_label(density_value, list(calibration.get("obs_error_density_bin_edges", []))),
+        "consistency": _bin_label(consistency, list(calibration.get("obs_error_consistency_bin_edges", []))),
+    }
+
+
+def _obs_error_composite_key(labels: dict[str, str]) -> str:
+    return (
+        f"altitude={labels['altitude']}|"
+        f"speed={labels['speed']}|"
+        f"density={labels['density']}|"
+        f"consistency={labels['consistency']}"
+    )
+
+
+def _sigma_from_map(mapping: Any, key: str) -> float | None:
+    if not isinstance(mapping, dict):
+        return None
+    if key not in mapping:
+        return None
+    sigma = _safe_float(mapping.get(key), float("nan"))
+    return sigma if math.isfinite(sigma) and sigma > 0.0 else None
+
+
+def _obs_error_sigma_for_row(row: dict[str, Any], calibration: dict[str, Any]) -> tuple[float, str]:
+    labels = _obs_error_feature_labels(row, calibration)
+    composite_key = _obs_error_composite_key(labels)
+    sigma = _sigma_from_map(calibration.get("obs_error_bin_sigma_mps"), composite_key)
+    source = "composite"
+    if sigma is None:
+        marginal_sigmas = [
+            _sigma_from_map(calibration.get("obs_error_altitude_bin_sigma_mps"), labels["altitude"]),
+            _sigma_from_map(calibration.get("obs_error_speed_bin_sigma_mps"), labels["speed"]),
+            _sigma_from_map(calibration.get("obs_error_density_bin_sigma_mps"), labels["density"]),
+            _sigma_from_map(calibration.get("obs_error_consistency_bin_sigma_mps"), labels["consistency"]),
+        ]
+        valid = [value for value in marginal_sigmas if value is not None]
+        if valid:
+            sigma = float(np.median(np.asarray(valid, dtype=np.float64)))
+            source = "marginal_median"
+    if sigma is None:
+        sigma = _cal_float(calibration, "obs_error_sigma_default_mps", 8.0)
+        source = "default"
+    floor = max(1e-6, _cal_float(calibration, "obs_error_sigma_floor_mps", 1.0))
+    return max(floor, float(sigma)), source
+
+
+def _obs_error_weight_bundle(row: dict[str, Any], calibration: dict[str, Any]) -> dict[str, float | str]:
+    sigma, sigma_source = _obs_error_sigma_for_row(row, calibration)
+    reference = max(1e-6, _cal_float(calibration, "obs_error_reference_sigma_mps", _cal_float(calibration, "obs_error_sigma_default_mps", 8.0)))
+    obs_conf = float(np.clip(_safe_float(row.get("obs_conf"), 1.0), 0.0, 2.0))
+    raw_weight = obs_conf * (reference / sigma) ** 2
+    weight = float(
+        np.clip(
+            raw_weight,
+            _cal_float(calibration, "obs_error_weight_min", 0.05),
+            _cal_float(calibration, "obs_error_weight_max", 4.0),
+        )
+    )
+    labels = _obs_error_feature_labels(row, calibration)
+    return {
+        "obs_error_sigma_vector_mps": float(sigma),
+        "obs_error_weight_factor": weight,
+        "obs_error_sigma_source": sigma_source,
+        "obs_error_bin_key": _obs_error_composite_key(labels),
+    }
+
+
 def _build_wind_observations(
     train_current_wind: list[dict[str, Any]],
     context_wind: list[dict[str, Any]],
@@ -302,8 +434,15 @@ def _build_wind_observations(
     context_time_conf_power = float(max(0.01, context_time_conf_power))
     for row in train_current_wind:
         factors = _diagnostic_factor_bundle(row, calibration)
-        diagnostic_multiplier = factors["combined_diagnostic_factor"] if confidence_mode == "diagnostic_weighted" else 1.0
-        base_weight = _active_base_weight(row, default_time_conf=1.0) * diagnostic_multiplier * current_weight_boost
+        obs_error = _obs_error_weight_bundle(row, calibration)
+        if confidence_mode == "obs_error_weighted":
+            use_diag = _safe_float(calibration.get("obs_error_use_diagnostic_factor"), 1.0) > 0.0
+            diagnostic_multiplier = factors["combined_diagnostic_factor"] if use_diag else 1.0
+            time_conf = _safe_float(row.get("time_conf"), 1.0)
+            base_weight = max(0.0, time_conf) * float(obs_error["obs_error_weight_factor"]) * diagnostic_multiplier * current_weight_boost
+        else:
+            diagnostic_multiplier = factors["combined_diagnostic_factor"] if confidence_mode == "diagnostic_weighted" else 1.0
+            base_weight = _active_base_weight(row, default_time_conf=1.0) * diagnostic_multiplier * current_weight_boost
         observations.append(
             {
                 "source_role": "current_wind_train",
@@ -315,17 +454,28 @@ def _build_wind_observations(
                 "base_weight": max(0.05, base_weight),
                 "time_conf": 1.0,
                 "obs_conf": _safe_float(row.get("obs_conf"), 1.0),
+                "obs_count": _safe_float(row.get("obs_count"), 1.0),
+                "alt_meters": _safe_float(row.get("alt_meters"), ALT_MIN + _safe_int(row.get("z"), 0) * DELTA_ALT),
                 "qc_flags": str(row.get("qc_flags", "ok") or "ok"),
                 "role_weight_multiplier": current_weight_boost,
                 **factors,
+                **obs_error,
             }
         )
     for row in context_wind:
         factors = _diagnostic_factor_bundle(row, calibration)
-        diagnostic_multiplier = factors["combined_diagnostic_factor"] if confidence_mode == "diagnostic_weighted" else 1.0
+        obs_error = _obs_error_weight_bundle(row, calibration)
+        if confidence_mode == "obs_error_weighted":
+            use_diag = _safe_float(calibration.get("obs_error_use_diagnostic_factor"), 1.0) > 0.0
+            diagnostic_multiplier = factors["combined_diagnostic_factor"] if use_diag else 1.0
+        else:
+            diagnostic_multiplier = factors["combined_diagnostic_factor"] if confidence_mode == "diagnostic_weighted" else 1.0
         time_conf = _safe_float(row.get("time_conf"), 0.0)
         time_power_factor = time_conf ** max(0.0, context_time_conf_power - 1.0) if time_conf > 0.0 else 0.0
-        base_weight = _active_base_weight(row, default_time_conf=0.0) * diagnostic_multiplier * context_weight_scale * time_power_factor
+        if confidence_mode == "obs_error_weighted":
+            base_weight = time_conf * float(obs_error["obs_error_weight_factor"]) * diagnostic_multiplier * context_weight_scale * time_power_factor
+        else:
+            base_weight = _active_base_weight(row, default_time_conf=0.0) * diagnostic_multiplier * context_weight_scale * time_power_factor
         observations.append(
             {
                 "source_role": "context_wind",
@@ -337,10 +487,13 @@ def _build_wind_observations(
                 "base_weight": max(0.0, base_weight),
                 "time_conf": time_conf,
                 "obs_conf": _safe_float(row.get("obs_conf"), 1.0),
+                "obs_count": _safe_float(row.get("obs_count"), 1.0),
+                "alt_meters": _safe_float(row.get("alt_meters"), ALT_MIN + _safe_int(row.get("z"), 0) * DELTA_ALT),
                 "qc_flags": str(row.get("qc_flags", "ok") or "ok"),
                 "role_weight_multiplier": context_weight_scale,
                 "context_time_conf_power": context_time_conf_power,
                 **factors,
+                **obs_error,
             }
         )
     filtered = [
@@ -359,6 +512,8 @@ def _build_wind_observations(
         "speed_qc_conf_stats": _factor_stats([row["speed_qc_conf_factor"] for row in filtered]),
         "local_consistency_conf_stats": _factor_stats([row["local_consistency_conf_factor"] for row in filtered]),
         "combined_diagnostic_factor_stats": _factor_stats([row["combined_diagnostic_factor"] for row in filtered]),
+        "obs_error_sigma_vector_mps_stats": _factor_stats([row["obs_error_sigma_vector_mps"] for row in filtered]),
+        "obs_error_weight_factor_stats": _factor_stats([row["obs_error_weight_factor"] for row in filtered]),
         "qc_flags_counts": _qc_counts(filtered),
         "qc_calibration": calibration,
         "current_weight_boost": float(current_weight_boost),
@@ -395,6 +550,249 @@ def _localization_weights(
         vertical = np.abs(dz / sigma_z).astype(np.float32)
         return (_gaspari_cohn_1d(horizontal) * _gaspari_cohn_1d(vertical)).astype(np.float32)
     raise ValueError(f"Unsupported localization kernel: {kernel}")
+
+
+def _dynamic_vertical_localization(
+    row: dict[str, Any],
+    *,
+    base_radius_z: int,
+    base_sigma_z: float,
+    policy: str,
+    qc_calibration: dict[str, Any],
+) -> dict[str, float | int | str]:
+    policy = str(policy)
+    if policy not in VERTICAL_LOCALIZATION_POLICIES:
+        raise ValueError(f"Unsupported vertical_localization_policy={policy}; choose {sorted(VERTICAL_LOCALIZATION_POLICIES)}")
+    base_radius_z = max(0, int(base_radius_z))
+    base_sigma_z = max(1e-6, float(base_sigma_z))
+    if policy == "fixed" or base_radius_z == 0:
+        return {
+            "radius_z": base_radius_z,
+            "sigma_z": base_sigma_z,
+            "sigma_factor": 1.0,
+            "reason": "fixed",
+        }
+
+    speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
+    altitude = _safe_float(row.get("alt_meters"), ALT_MIN + max(0, _safe_int(row.get("z"), 0)) * DELTA_ALT)
+    obs_count = _safe_float(row.get("obs_count"), 1.0)
+    time_conf = _safe_float(row.get("time_conf"), 1.0)
+    source_role = str(row.get("source_role"))
+    factor = 1.0
+    reasons: list[str] = []
+
+    if speed >= _cal_float(qc_calibration, "vertical_localization_strong_speed_mps", 60.0):
+        factor *= _cal_float(qc_calibration, "vertical_localization_strong_speed_factor", 0.75)
+        reasons.append("strong_speed")
+    if altitude >= _cal_float(qc_calibration, "vertical_localization_high_altitude_m", 9000.0):
+        factor *= _cal_float(qc_calibration, "vertical_localization_high_altitude_factor", 0.85)
+        reasons.append("high_altitude")
+    if source_role == "current_wind_train" and obs_count >= _cal_float(qc_calibration, "vertical_localization_dense_count", 6.0):
+        factor *= _cal_float(qc_calibration, "vertical_localization_dense_current_factor", 0.85)
+        reasons.append("dense_current")
+    if source_role == "context_wind" and time_conf <= _cal_float(qc_calibration, "vertical_localization_stale_context_time_conf", 0.28):
+        factor *= _cal_float(qc_calibration, "vertical_localization_stale_context_factor", 0.70)
+        reasons.append("stale_context")
+    if not reasons and obs_count <= _cal_float(qc_calibration, "vertical_localization_sparse_count", 1.0):
+        factor *= _cal_float(qc_calibration, "vertical_localization_sparse_weak_factor", 1.10)
+        reasons.append("sparse_weak_support")
+
+    min_factor = _cal_float(qc_calibration, "vertical_localization_min_sigma_factor", 0.55)
+    max_factor = _cal_float(qc_calibration, "vertical_localization_max_sigma_factor", 1.25)
+    factor = float(np.clip(factor, min_factor, max_factor))
+    radius_z = max(1, int(round(base_radius_z * factor))) if base_radius_z > 0 else 0
+    return {
+        "radius_z": radius_z,
+        "sigma_z": base_sigma_z * factor,
+        "sigma_factor": factor,
+        "reason": "+".join(reasons) if reasons else "neutral",
+    }
+
+
+def _parse_localization_candidate_grid(text: str) -> list[dict[str, float | int]]:
+    candidates: list[dict[str, float | int]] = []
+    for item in str(text).split(","):
+        token = item.strip()
+        if not token:
+            continue
+        parts = [part.strip() for part in token.replace("/", ":").split(":")]
+        if len(parts) == 2:
+            rxy, sxy = parts
+            rz, sz = 2, 1.0
+        elif len(parts) == 4:
+            rxy, sxy, rz, sz = parts
+        else:
+            raise ValueError(f"Localization candidate must be rxy:sxy or rxy:sxy:rz:sz: {token}")
+        candidates.append(
+            {
+                "localization_radius_xy": int(rxy),
+                "localization_sigma_xy": float(sxy),
+                "localization_radius_z": int(rz),
+                "localization_sigma_z": float(sz),
+            }
+        )
+    if not candidates:
+        raise ValueError("No localization candidates were provided.")
+    return candidates
+
+
+def _candidate_by_radius(candidates: list[dict[str, float | int]], radius_xy: int) -> dict[str, float | int]:
+    target = int(radius_xy)
+    return min(candidates, key=lambda row: abs(int(row["localization_radius_xy"]) - target))
+
+
+def _mean_record_value(rows: list[dict[str, Any]], key: str, default: float = 0.0) -> float:
+    values = [_safe_float(row.get(key), float("nan")) for row in rows]
+    finite = [value for value in values if math.isfinite(value)]
+    return float(np.mean(finite)) if finite else float(default)
+
+
+def _select_adaptive_localization(
+    *,
+    train_current_wind: list[dict[str, Any]],
+    context_wind: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
+    candidate_grid: str,
+    default_radius_xy: int,
+    default_sigma_xy: float,
+    default_radius_z: int,
+    default_sigma_z: float,
+    qc_calibration: dict[str, Any] | None = None,
+    policy: str = "diagnostic_adaptive",
+) -> tuple[dict[str, float | int], dict[str, Any]]:
+    """Choose a frame-level localization kernel without inspecting holdout errors."""
+
+    calibration = qc_calibration or DEFAULT_QC_CALIBRATION
+    candidates = _parse_localization_candidate_grid(candidate_grid)
+    current_count = len(train_current_wind)
+    context_count = len(context_wind)
+    obs_error_weight_mean = _mean_record_value(observations, "obs_error_weight_factor", 1.0)
+    local_consistency_mean = _mean_record_value(observations, "local_consistency_conf_factor", 1.0)
+    context_time_mean = _mean_record_value([row for row in observations if str(row.get("source_role")) == "context_wind"], "time_conf", 0.0)
+    current_time_mean = _mean_record_value([row for row in observations if str(row.get("source_role")) == "current_wind_train"], "time_conf", 1.0)
+    current_density_proxy = min(1.0, current_count / max(1e-6, _cal_float(calibration, "adaptive_localization_high_current_support", 8.0)))
+    context_density_proxy = min(1.0, context_count / max(1e-6, _cal_float(calibration, "adaptive_localization_high_context_support", 300.0)))
+    context_fresh_proxy = min(1.0, context_time_mean / max(1e-6, _cal_float(calibration, "adaptive_localization_high_context_time_conf", 0.45)))
+    low_obs_error_weight = obs_error_weight_mean < _cal_float(calibration, "adaptive_localization_low_obs_error_weight", 0.90)
+
+    current_u = _mean_record_value(train_current_wind, "u", 0.0)
+    current_v = _mean_record_value(train_current_wind, "v", 0.0)
+    context_u = _mean_record_value(context_wind, "u", current_u)
+    context_v = _mean_record_value(context_wind, "v", current_v)
+    role_gap_mps = math.sqrt((current_u - context_u) ** 2 + (current_v - context_v) ** 2) if current_count > 0 and context_count > 0 else 0.0
+    role_conflict_proxy = role_gap_mps / max(1.0, _cal_float(calibration, "speed_soft_limit_mps", 90.0))
+
+    score = 8.0
+    reasons: list[str] = ["default_timepower15_8_4_conservative_v2"]
+    low_current = current_count <= _cal_float(calibration, "adaptive_localization_low_current_support", 2.0)
+    high_current = current_count >= _cal_float(calibration, "adaptive_localization_high_current_support", 8.0)
+    context_useful = (
+        context_count >= _cal_float(calibration, "adaptive_localization_high_context_support", 300.0)
+        and context_time_mean >= _cal_float(calibration, "adaptive_localization_low_context_time_conf", 0.28)
+    )
+    high_vertical_mismatch = (
+        _mean_record_value(observations, "local_consistency_conf_factor", 1.0) < 0.94
+        or role_conflict_proxy >= _cal_float(calibration, "adaptive_localization_high_role_conflict_ratio", 0.08)
+    )
+
+    # Conservative v2: only widen for moderate-risk frames. The first adaptive
+    # pass showed that frequent 6/3 or 12/6 switches hurt low-error frames.
+    if context_useful and not low_current and current_count <= 18 and context_time_mean >= 0.50:
+        score = 10.0
+        reasons.append("moderate_current_support_fresh_context_prefers_10_5")
+    if low_current and context_useful and context_time_mean >= 0.55 and not high_vertical_mismatch:
+        score = 10.0
+        reasons.append("low_current_but_stable_context_prefers_10_5")
+    if high_current and role_conflict_proxy >= 0.18 and context_time_mean < 0.50:
+        score = 6.0
+        reasons.append("dense_current_stale_conflict_prefers_6_3")
+    if low_obs_error_weight and score < 10.0 and context_useful and current_count <= 12:
+        score = 10.0
+        reasons.append("low_obs_error_weight_sparse_support_prefers_10_5")
+
+    if str(policy) in {"diagnostic_adaptive_v3", "diagnostic_adaptive_regime_v4"} and score > 8.0:
+        stable_low_error_guard = (
+            current_count <= _cal_float(calibration, "adaptive_localization_v3_guard_max_current_support", 8.0)
+            and context_time_mean <= _cal_float(calibration, "adaptive_localization_v3_guard_max_context_time_conf", 0.57)
+            and local_consistency_mean >= _cal_float(calibration, "adaptive_localization_v3_guard_min_local_consistency", 0.98)
+        )
+        sparse_context_guard = (
+            current_count <= _cal_float(calibration, "adaptive_localization_v3_sparse_guard_max_current_support", 2.0)
+            and context_time_mean <= _cal_float(calibration, "adaptive_localization_v3_sparse_guard_max_context_time_conf", 0.52)
+            and local_consistency_mean >= _cal_float(calibration, "adaptive_localization_v3_sparse_guard_min_local_consistency", 0.985)
+        )
+        if stable_low_error_guard or sparse_context_guard:
+            score = 8.0
+            reasons.append("v3_low_error_guard_prefers_8_4")
+
+    if str(policy) == "diagnostic_adaptive_regime_v4":
+        very_sparse_current = current_count <= _cal_float(calibration, "adaptive_localization_v4_very_sparse_current_support", 1.0)
+        sparse_current = current_count <= _cal_float(calibration, "adaptive_localization_v4_sparse_current_support", 2.0)
+        dense_current = current_count >= _cal_float(calibration, "adaptive_localization_v4_dense_current_support", 10.0)
+        fresh_context = context_time_mean >= _cal_float(calibration, "adaptive_localization_v4_fresh_context_time_conf", 0.52)
+        stale_context = context_time_mean <= _cal_float(calibration, "adaptive_localization_v4_stale_context_time_conf", 0.42)
+        stable_local = local_consistency_mean >= _cal_float(calibration, "adaptive_localization_v4_stable_local_consistency", 0.975)
+        unstable_local = local_consistency_mean <= _cal_float(calibration, "adaptive_localization_v4_unstable_local_consistency", 0.93)
+        elevated_role_conflict = role_conflict_proxy >= _cal_float(calibration, "adaptive_localization_v4_high_role_conflict_ratio", 0.18)
+
+        if high_vertical_mismatch or unstable_local or elevated_role_conflict:
+            score = 8.0
+            reasons.append("v4_vertical_or_role_risk_prefers_8_4")
+        elif very_sparse_current and context_useful and fresh_context and stable_local:
+            score = 12.0
+            reasons.append("v4_very_sparse_current_fresh_context_prefers_12_6")
+        elif sparse_current and context_useful and fresh_context:
+            score = max(score, 10.0)
+            reasons.append("v4_sparse_current_fresh_context_prefers_10_5")
+        elif dense_current and stable_local and role_conflict_proxy < _cal_float(calibration, "adaptive_localization_v4_dense_current_max_role_conflict_ratio", 0.10):
+            score = 8.0
+            reasons.append("v4_dense_current_stable_anchor_prefers_8_4")
+
+        if stale_context and score > 8.0:
+            score = 8.0
+            reasons.append("v4_stale_context_guard_prefers_8_4")
+        if low_obs_error_weight and score > 10.0 and current_count >= 3:
+            score = 10.0
+            reasons.append("v4_low_obs_error_weight_caps_widening_10_5")
+
+    candidate_radii = [int(row["localization_radius_xy"]) for row in candidates]
+    min_radius = min(candidate_radii)
+    max_radius = max(candidate_radii)
+    selected_radius = int(np.clip(round(score / 2.0) * 2, min_radius, max_radius))
+    selected = dict(_candidate_by_radius(candidates, selected_radius))
+    if not selected:
+        selected = {
+            "localization_radius_xy": int(default_radius_xy),
+            "localization_sigma_xy": float(default_sigma_xy),
+            "localization_radius_z": int(default_radius_z),
+            "localization_sigma_z": float(default_sigma_z),
+        }
+    # Keep the current vertical spread fixed until vertical-risk phase has a stronger rule.
+    selected["localization_radius_z"] = int(default_radius_z)
+    selected["localization_sigma_z"] = float(default_sigma_z)
+    diagnostics = {
+        "localization_policy": str(policy),
+        "localization_candidate_grid": str(candidate_grid),
+        "adaptive_selected_radius_xy": int(selected["localization_radius_xy"]),
+        "adaptive_selected_sigma_xy": float(selected["localization_sigma_xy"]),
+        "adaptive_selected_radius_z": int(selected["localization_radius_z"]),
+        "adaptive_selected_sigma_z": float(selected["localization_sigma_z"]),
+        "adaptive_score": float(score),
+        "adaptive_reasons": ";".join(reasons),
+        "adaptive_current_support": int(current_count),
+        "adaptive_context_support": int(context_count),
+        "adaptive_current_time_conf_mean": float(current_time_mean),
+        "adaptive_context_time_conf_mean": float(context_time_mean),
+        "adaptive_obs_error_weight_mean": float(obs_error_weight_mean),
+        "adaptive_local_consistency_mean": float(local_consistency_mean),
+        "adaptive_role_gap_mps": float(role_gap_mps),
+        "adaptive_role_conflict_proxy": float(role_conflict_proxy),
+        "adaptive_current_density_proxy": float(current_density_proxy),
+        "adaptive_context_density_proxy": float(context_density_proxy),
+        "adaptive_context_fresh_proxy": float(context_fresh_proxy),
+        "adaptive_no_holdout_inputs_used": True,
+    }
+    return selected, diagnostics
 
 
 def _positive_percentile_scale(values: np.ndarray, percentile: float = 90.0, default: float = 1.0) -> float:
@@ -495,6 +893,7 @@ def _accumulate_localized(
     role_conflict_mode: str = "off",
     conflict_speed_threshold_mps: float = 12.0,
     conflict_context_factor: float = 0.25,
+    vertical_localization_policy: str = "fixed",
     qc_calibration: dict[str, Any] | None = None,
 ) -> dict[str, np.ndarray]:
     z_dim, h_dim, w_dim = shape
@@ -516,6 +915,14 @@ def _accumulate_localized(
     conflict_context_removed_w = np.zeros(shape, dtype=np.float32)
     role_conflict_mask = np.zeros(shape, dtype=bool)
     calibration = qc_calibration or DEFAULT_QC_CALIBRATION
+    vertical_localization_policy = str(vertical_localization_policy)
+    if vertical_localization_policy not in VERTICAL_LOCALIZATION_POLICIES:
+        raise ValueError(
+            f"Unsupported vertical_localization_policy={vertical_localization_policy}; "
+            f"choose {sorted(VERTICAL_LOCALIZATION_POLICIES)}"
+        )
+    vertical_sigma_factors: list[float] = []
+    vertical_reason_counts: dict[str, int] = {}
     component_gap = np.zeros(shape, dtype=np.float32)
     threshold_field = np.zeros(shape, dtype=np.float32)
     context_factor_field = np.zeros(shape, dtype=np.float32)
@@ -563,8 +970,21 @@ def _accumulate_localized(
         x = int(row["x"])
         if not (0 <= z < z_dim and 0 <= y < h_dim and 0 <= x < w_dim):
             continue
-        z0 = max(0, z - radius_z)
-        z1 = min(z_dim, z + radius_z + 1)
+        vertical_loc = _dynamic_vertical_localization(
+            row,
+            base_radius_z=radius_z,
+            base_sigma_z=sigma_z,
+            policy=vertical_localization_policy,
+            qc_calibration=calibration,
+        )
+        row_radius_z = int(vertical_loc["radius_z"])
+        row_sigma_z = float(vertical_loc["sigma_z"])
+        factor = float(vertical_loc["sigma_factor"])
+        reason = str(vertical_loc["reason"])
+        vertical_sigma_factors.append(factor)
+        vertical_reason_counts[reason] = vertical_reason_counts.get(reason, 0) + 1
+        z0 = max(0, z - row_radius_z)
+        z1 = min(z_dim, z + row_radius_z + 1)
         y0 = max(0, y - radius_xy)
         y1 = min(h_dim, y + radius_xy + 1)
         x0 = max(0, x - radius_xy)
@@ -573,7 +993,7 @@ def _accumulate_localized(
         dz = (np.arange(z0, z1, dtype=np.float32) - float(z))[:, None, None]
         dy = (np.arange(y0, y1, dtype=np.float32) - float(y))[None, :, None]
         dx = (np.arange(x0, x1, dtype=np.float32) - float(x))[None, None, :]
-        localization = _localization_weights(dx, dy, dz, sigma_xy, sigma_z, localization_kernel)
+        localization = _localization_weights(dx, dy, dz, sigma_xy, row_sigma_z, localization_kernel)
         local_w = localization * np.float32(row["base_weight"])
 
         acc_u[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * local_w
@@ -700,6 +1120,13 @@ def _accumulate_localized(
         "role_conflict_current_density_field": current_density,
         "role_conflict_context_time_mean_field": context_time_mean,
         "role_conflict_scalar_diagnostics": role_conflict_scalar_diagnostics,
+        "vertical_localization_scalar_diagnostics": {
+            "vertical_localization_policy": vertical_localization_policy,
+            "vertical_localization_sigma_factor_stats": _factor_stats(vertical_sigma_factors),
+            "vertical_localization_reason_counts": json.dumps(vertical_reason_counts, ensure_ascii=False, sort_keys=True),
+            "vertical_localization_base_radius_z": int(radius_z),
+            "vertical_localization_base_sigma_z": float(sigma_z),
+        },
     }
 
 
@@ -1599,6 +2026,57 @@ def _point_qc_review(
     return bool(reasons), ";".join(reasons)
 
 
+def _neighborhood_vector_error_stats(
+    *,
+    z: int,
+    y: int,
+    x: int,
+    gt_u: float,
+    gt_v: float,
+    recon_u: np.ndarray,
+    recon_v: np.ndarray,
+    recon_conf: np.ndarray,
+    radius_xy: int = 1,
+    radius_z: int = 1,
+) -> dict[str, float | int]:
+    z0 = max(0, z - int(radius_z))
+    z1 = min(recon_u.shape[0], z + int(radius_z) + 1)
+    y0 = max(0, y - int(radius_xy))
+    y1 = min(recon_u.shape[1], y + int(radius_xy) + 1)
+    x0 = max(0, x - int(radius_xy))
+    x1 = min(recon_u.shape[2], x + int(radius_xy) + 1)
+
+    sub_u = np.asarray(recon_u[z0:z1, y0:y1, x0:x1], dtype=np.float32)
+    sub_v = np.asarray(recon_v[z0:z1, y0:y1, x0:x1], dtype=np.float32)
+    sub_conf = np.asarray(recon_conf[z0:z1, y0:y1, x0:x1], dtype=np.float32)
+    mask = np.isfinite(sub_u) & np.isfinite(sub_v) & np.isfinite(sub_conf) & (sub_conf > EFFECTIVE_CONF_THRESHOLD)
+    if not np.any(mask):
+        return {
+            "point_neighbor_count": 0,
+            "point_neighbor_mean_vector_error": float("nan"),
+            "point_neighbor_min_vector_error": float("nan"),
+            "point_neighbor_weighted_vector_error": float("nan"),
+            "point_neighbor_std_vector_error": float("nan"),
+            "representativeness_gap_point_minus_min_mps": float("nan"),
+        }
+
+    vec = np.sqrt(((sub_u - np.float32(gt_u)) ** 2 + (sub_v - np.float32(gt_v)) ** 2).astype(np.float32)).astype(np.float32)
+    valid_errors = vec[mask].astype(np.float64)
+    valid_conf = np.clip(sub_conf[mask].astype(np.float64), 0.0, None)
+    if float(np.sum(valid_conf)) <= 0.0:
+        valid_conf = np.ones_like(valid_errors, dtype=np.float64)
+    center_error = math.sqrt((float(recon_u[z, y, x]) - gt_u) ** 2 + (float(recon_v[z, y, x]) - gt_v) ** 2)
+    neighbor_min = float(np.min(valid_errors))
+    return {
+        "point_neighbor_count": int(valid_errors.size),
+        "point_neighbor_mean_vector_error": float(np.mean(valid_errors)),
+        "point_neighbor_min_vector_error": neighbor_min,
+        "point_neighbor_weighted_vector_error": float(np.sum(valid_errors * valid_conf) / np.sum(valid_conf)),
+        "point_neighbor_std_vector_error": float(np.std(valid_errors)),
+        "representativeness_gap_point_minus_min_mps": float(center_error - neighbor_min),
+    }
+
+
 def _point_eval_rows(
     holdout: list[dict[str, Any]],
     recon_u: np.ndarray,
@@ -1635,6 +2113,18 @@ def _point_eval_rows(
         vertical_speed_gap = float(abs(pred_speed - vertical_neighbor_mean[z, y, x]))
         vertical_neighbor_max_speed = float(vertical_neighbor_max[z, y, x])
         role_context = _point_role_conflict_context(z, y, x, acc)
+        neighborhood_stats = _neighborhood_vector_error_stats(
+            z=z,
+            y=y,
+            x=x,
+            gt_u=gt_u,
+            gt_v=gt_v,
+            recon_u=recon_u,
+            recon_v=recon_v,
+            recon_conf=recon_conf,
+            radius_xy=1,
+            radius_z=1,
+        )
         qc_review_flag, qc_review_reasons = _point_qc_review(
             vector_error=vector_error,
             gt_speed=gt_speed,
@@ -1679,6 +2169,7 @@ def _point_eval_rows(
                 "recon_vertical_jump_mps": recon_vertical_jump,
                 "vertical_speed_gap_mps": vertical_speed_gap,
                 "vertical_neighbor_max_speed_mps": vertical_neighbor_max_speed,
+                **neighborhood_stats,
                 **role_context,
                 "qc_review_flag": qc_review_flag,
                 "qc_review_reasons": qc_review_reasons,
@@ -1743,6 +2234,12 @@ def _write_point_eval_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "recon_vertical_jump_mps",
         "vertical_speed_gap_mps",
         "vertical_neighbor_max_speed_mps",
+        "point_neighbor_count",
+        "point_neighbor_mean_vector_error",
+        "point_neighbor_min_vector_error",
+        "point_neighbor_weighted_vector_error",
+        "point_neighbor_std_vector_error",
+        "representativeness_gap_point_minus_min_mps",
         "role_overlap_at_point",
         "role_conflict_at_point",
         "role_conflict_component_gap_at_point_mps",
@@ -1877,7 +2374,7 @@ def _write_method_md(
             "",
             "## Confidence Diagnostics",
             "",
-            "Default Stage4 keeps these as diagnostics only. They affect weights only when `confidence_mode=diagnostic_weighted`.",
+            "Default Stage4 keeps these as diagnostics only. They affect weights when `confidence_mode=diagnostic_weighted`; observation-error sigma/weight fields affect weights when `confidence_mode=obs_error_weighted`.",
             "",
             "| item | value |",
             "| --- | --- |",
@@ -1953,6 +2450,7 @@ def _write_method_md(
             "- Strict hold-out: selected `wind_records` are answer keys and are removed before fusion. Aircraft-surveillance weather reconstruction literature supports aircraft-derived wind as a useful but noisy sparse observation source. References: https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0205029 and https://amt.copernicus.org/articles/9/4141/2016/",
             "- Target-voxel localization: Gaussian uses `exp(-0.5*((dx/sigma_xy)^2+(dy/sigma_xy)^2+(dz/sigma_z)^2))`; Gaspari-Cohn uses compact-support fifth-order localization. DART/Gaspari-Cohn localization motivates applying spatial influence relative to the target state/voxel, not the logical Ground Center. Reference: https://docs.dart.ucar.edu/en/latest/assimilation_code/modules/assimilation/cov_cutoff_mod.html",
             "- Optional diagnostic weighting: density/QC/time-consistency factors are recorded by default and only change active weights when `confidence_mode=diagnostic_weighted`. Aircraft-derived wind systems require QC and error awareness. References: https://amt.copernicus.org/articles/18/3341/2025/ and https://amt.copernicus.org/articles/9/4141/2016/",
+            "- Observation-error weighting: `confidence_mode=obs_error_weighted` uses calibration-bin aircraft wind error sigma estimates and applies a clipped inverse-variance factor before target-voxel localization. The calibration must be built without using the active frame holdout labels.",
             "- PINN/diffusion-style gap fill: smoothness, weak divergence and neighbor propagation are proxy diagnostics only, not trained PINN or diffusion models. Local basis: workflow/wiki/wind-field-reconstruction.md and workflow/wiki/beijing-aviation-3d-wind-reconstruction-analysis.md",
             "- `physics_constraint_mode=pydda_3dvar_proxy` adds observation anchoring, masked neighbor smoothness, weak horizontal divergence reduction and speed plausibility clipping. It borrows the 3DVAR idea that observation and physical constraints jointly shape retrieval, but it is still an aircraft-observation proxy rather than PyDDA radar retrieval.",
             "- 3D wind-field constraints: smoothness, mass-continuity/divergence and observation consistency are common in variational wind retrieval. PyDDA/3DVAR and dual-Doppler variational retrieval are reference routes; this Stage4 remains an aircraft-observation proxy, not a Doppler retrieval. References: https://openresearchsoftware.metajnl.com/articles/264 and workflow/wiki/source-dual-doppler-variational-wind-field.md",
@@ -1982,6 +2480,8 @@ def process_frame(
     localization_sigma_xy: float,
     localization_sigma_z: float,
     localization_kernel: str,
+    localization_policy: str,
+    localization_candidate_grid: str,
     confidence_mode: str,
     qc_calibration: dict[str, Any],
     refine_iters: int,
@@ -1994,6 +2494,7 @@ def process_frame(
     observation_anchor_weight: float,
     speed_limit_mps: float,
     vertical_risk_mode: str,
+    vertical_localization_policy: str,
     vertical_gradient_preserve_weight: float,
     vertical_context_mismatch_damping: float,
     current_weight_boost: float,
@@ -2037,6 +2538,34 @@ def process_frame(
         context_weight_scale=context_weight_scale,
         context_time_conf_power=context_time_conf_power,
     )
+    adaptive_diagnostics: dict[str, Any] = {
+        "localization_policy": str(localization_policy),
+        "localization_candidate_grid": str(localization_candidate_grid),
+        "adaptive_selected_radius_xy": int(localization_radius_xy),
+        "adaptive_selected_sigma_xy": float(localization_sigma_xy),
+        "adaptive_selected_radius_z": int(localization_radius_z),
+        "adaptive_selected_sigma_z": float(localization_sigma_z),
+        "adaptive_score": 0.0,
+        "adaptive_reasons": "fixed",
+        "adaptive_no_holdout_inputs_used": True,
+    }
+    if str(localization_policy) in {"diagnostic_adaptive", "diagnostic_adaptive_v3", "diagnostic_adaptive_regime_v4"}:
+        selected_loc, adaptive_diagnostics = _select_adaptive_localization(
+            train_current_wind=train_wind,
+            context_wind=context_wind_records,
+            observations=observations,
+            candidate_grid=str(localization_candidate_grid),
+            default_radius_xy=int(localization_radius_xy),
+            default_sigma_xy=float(localization_sigma_xy),
+            default_radius_z=int(localization_radius_z),
+            default_sigma_z=float(localization_sigma_z),
+            qc_calibration=qc_calibration,
+            policy=str(localization_policy),
+        )
+        localization_radius_xy = int(selected_loc["localization_radius_xy"])
+        localization_sigma_xy = float(selected_loc["localization_sigma_xy"])
+        localization_radius_z = int(selected_loc["localization_radius_z"])
+        localization_sigma_z = float(selected_loc["localization_sigma_z"])
     acc = _accumulate_localized(
         shape,
         observations,
@@ -2048,8 +2577,10 @@ def process_frame(
         role_conflict_mode=role_conflict_mode,
         conflict_speed_threshold_mps=conflict_speed_threshold_mps,
         conflict_context_factor=conflict_context_factor,
+        vertical_localization_policy=vertical_localization_policy,
         qc_calibration=qc_calibration,
     )
+    vertical_localization_diagnostics = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
     cma_path = cma_proxy_npz
     if cma_path is None:
         cma_path = _find_cma_proxy_npz(cma_proxy_dir, time_str)
@@ -2132,12 +2663,21 @@ def process_frame(
         "localization_radius_z": int(localization_radius_z),
         "localization_sigma_xy": float(localization_sigma_xy),
         "localization_sigma_z": float(localization_sigma_z),
+        "localization_policy": str(localization_policy),
+        "localization_candidate_grid": str(localization_candidate_grid),
+        "adaptive_selected_radius_xy": int(adaptive_diagnostics["adaptive_selected_radius_xy"]),
+        "adaptive_selected_sigma_xy": float(adaptive_diagnostics["adaptive_selected_sigma_xy"]),
+        "adaptive_selected_radius_z": int(adaptive_diagnostics["adaptive_selected_radius_z"]),
+        "adaptive_selected_sigma_z": float(adaptive_diagnostics["adaptive_selected_sigma_z"]),
+        "adaptive_score": float(adaptive_diagnostics["adaptive_score"]),
+        "adaptive_reasons": str(adaptive_diagnostics["adaptive_reasons"]),
+        "adaptive_no_holdout_inputs_used": bool(adaptive_diagnostics["adaptive_no_holdout_inputs_used"]),
         "confidence_mode": str(confidence_mode),
-        "active_weight": (
-            "obs_conf * time_conf * target_voxel_localization"
-            if confidence_mode == "diagnostic_only"
-            else "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors"
-        ),
+        "active_weight": {
+            "diagnostic_only": "obs_conf * time_conf * target_voxel_localization",
+            "diagnostic_weighted": "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors",
+            "obs_error_weighted": "time_conf * aircraft_obs_error_inverse_variance_weight * target_voxel_localization * optional_diagnostic_confidence_factors",
+        }.get(str(confidence_mode), str(confidence_mode)),
         "motion_as_wind": False,
         "pinn_diffusion_refine": bool(refine_metrics.get("pinn_diffusion_refine_enabled", 0.0)),
         "pinn_proxy_iterations": int(refine_metrics.get("pinn_proxy_iterations", 0.0)),
@@ -2150,6 +2690,7 @@ def process_frame(
         "observation_anchor_weight": float(observation_anchor_weight),
         "speed_limit_mps": float(speed_limit_mps),
         "vertical_risk_mode": str(vertical_risk_mode),
+        "vertical_localization_policy": str(vertical_localization_policy),
         "vertical_gradient_preserve_weight": float(vertical_gradient_preserve_weight),
         "vertical_context_mismatch_damping": float(vertical_context_mismatch_damping),
         "current_weight_boost": float(current_weight_boost),
@@ -2185,6 +2726,7 @@ def process_frame(
         "confidence_diagnostics": confidence_diagnostics,
         "field_diagnostics": field_diagnostics,
         "role_conflict_diagnostics": role_conflict_diagnostics,
+        "vertical_localization_diagnostics": vertical_localization_diagnostics,
         "cma_fusion_diagnostics": cma_fusion_diagnostics,
         "refine_metrics": refine_metrics,
         "pressure_test_note": pressure_test_note,
@@ -2214,6 +2756,7 @@ def process_frame(
             "stage4_confidence_diagnostics_json": np.array(json.dumps(confidence_diagnostics, ensure_ascii=False)),
             "stage4_field_diagnostics_json": np.array(json.dumps(field_diagnostics, ensure_ascii=False)),
             "stage4_role_conflict_diagnostics_json": np.array(json.dumps(role_conflict_diagnostics, ensure_ascii=False)),
+            "stage4_vertical_localization_diagnostics_json": np.array(json.dumps(vertical_localization_diagnostics, ensure_ascii=False)),
             "stage4_cma_fusion_diagnostics_json": np.array(json.dumps(cma_fusion_diagnostics, ensure_ascii=False)),
             "stage4_leakage_report_json": np.array(json.dumps(leakage_report, ensure_ascii=False)),
             "holdout_records_json": np.array(json.dumps(holdout_wind, ensure_ascii=False)),
@@ -2258,11 +2801,22 @@ def process_frame(
         **refine_metrics,
         **field_diagnostics,
         **role_conflict_diagnostics,
+        **vertical_localization_diagnostics,
         **cma_fusion_diagnostics,
         "confidence_mode": str(confidence_mode),
         "localization_kernel": str(localization_kernel),
+        "localization_policy": str(localization_policy),
+        "localization_candidate_grid": str(localization_candidate_grid),
+        "adaptive_selected_radius_xy": int(adaptive_diagnostics["adaptive_selected_radius_xy"]),
+        "adaptive_selected_sigma_xy": float(adaptive_diagnostics["adaptive_selected_sigma_xy"]),
+        "adaptive_selected_radius_z": int(adaptive_diagnostics["adaptive_selected_radius_z"]),
+        "adaptive_selected_sigma_z": float(adaptive_diagnostics["adaptive_selected_sigma_z"]),
+        "adaptive_score": float(adaptive_diagnostics["adaptive_score"]),
+        "adaptive_reasons": str(adaptive_diagnostics["adaptive_reasons"]),
+        "adaptive_no_holdout_inputs_used": bool(adaptive_diagnostics["adaptive_no_holdout_inputs_used"]),
         "physics_constraint_mode": str(physics_constraint_mode),
         "vertical_risk_mode": str(vertical_risk_mode),
+        "vertical_localization_policy": str(vertical_localization_policy),
         "vertical_gradient_preserve_weight": float(vertical_gradient_preserve_weight),
         "vertical_context_mismatch_damping": float(vertical_context_mismatch_damping),
         "current_weight_boost": float(current_weight_boost),
@@ -2347,6 +2901,10 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.localization_sigma_z),
             "--localization-kernel",
             str(args.localization_kernel),
+            "--localization-policy",
+            str(args.localization_policy),
+            "--localization-candidate-grid",
+            str(args.localization_candidate_grid),
             "--confidence-mode",
             str(args.confidence_mode),
             "--refine-iters",
@@ -2369,6 +2927,8 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.speed_limit_mps),
             "--vertical-risk-mode",
             str(args.vertical_risk_mode),
+            "--vertical-localization-policy",
+            str(args.vertical_localization_policy),
             "--vertical-gradient-preserve-weight",
             str(args.vertical_gradient_preserve_weight),
             "--vertical-context-mismatch-damping",
@@ -2449,6 +3009,8 @@ def main() -> None:
     parser.add_argument("--localization-sigma-xy", type=float, default=max(1.0, BLINDZONE_IDW_RADIUS_XY / 2.0))
     parser.add_argument("--localization-sigma-z", type=float, default=max(0.5, BLINDZONE_IDW_RADIUS_Z / 2.0))
     parser.add_argument("--localization-kernel", choices=sorted(LOCALIZATION_KERNELS), default="gaussian")
+    parser.add_argument("--localization-policy", choices=sorted(LOCALIZATION_POLICIES), default="fixed")
+    parser.add_argument("--localization-candidate-grid", default="6:3,8:4,10:5,12:6")
     parser.add_argument("--confidence-mode", choices=sorted(CONFIDENCE_MODES), default="diagnostic_only")
     parser.add_argument("--qc-calibration", type=Path)
     parser.add_argument("--refine-iters", type=int, default=4)
@@ -2461,6 +3023,7 @@ def main() -> None:
     parser.add_argument("--observation-anchor-weight", type=float, default=0.10)
     parser.add_argument("--speed-limit-mps", type=float, default=120.0)
     parser.add_argument("--vertical-risk-mode", choices=sorted(VERTICAL_RISK_MODES), default="off")
+    parser.add_argument("--vertical-localization-policy", choices=sorted(VERTICAL_LOCALIZATION_POLICIES), default="fixed")
     parser.add_argument("--vertical-gradient-preserve-weight", type=float, default=float(DEFAULT_QC_CALIBRATION["vertical_risk_gradient_preserve_weight"]))
     parser.add_argument("--vertical-context-mismatch-damping", type=float, default=float(DEFAULT_QC_CALIBRATION["vertical_risk_context_mismatch_damping"]))
     parser.add_argument("--current-weight-boost", type=float, default=1.0)
@@ -2522,6 +3085,8 @@ def main() -> None:
                 localization_sigma_xy=float(args.localization_sigma_xy),
                 localization_sigma_z=float(args.localization_sigma_z),
                 localization_kernel=str(args.localization_kernel),
+                localization_policy=str(args.localization_policy),
+                localization_candidate_grid=str(args.localization_candidate_grid),
                 confidence_mode=str(args.confidence_mode),
                 qc_calibration=qc_calibration,
                 refine_iters=int(args.refine_iters),
@@ -2534,6 +3099,7 @@ def main() -> None:
                 observation_anchor_weight=float(args.observation_anchor_weight),
                 speed_limit_mps=float(args.speed_limit_mps),
                 vertical_risk_mode=str(args.vertical_risk_mode),
+                vertical_localization_policy=str(args.vertical_localization_policy),
                 vertical_gradient_preserve_weight=float(args.vertical_gradient_preserve_weight),
                 vertical_context_mismatch_damping=float(args.vertical_context_mismatch_damping),
                 current_weight_boost=float(args.current_weight_boost),

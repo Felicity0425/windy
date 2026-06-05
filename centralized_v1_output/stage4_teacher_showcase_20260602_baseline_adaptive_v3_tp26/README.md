@@ -73,7 +73,88 @@ tables/
 3. 然后讲指标：baseline 到 tp26，weighted RMSE 下降约 21.9%，P95 下降约 34.4%。
 4. 最后讲限制：极端长尾还没有根治，例如 `20260205190000` 和 `20260223133000`；下一步应做更大 holdout-only 验证和 per-point support-aware localization。
 
-## 7. 参考文献与借用边界
+## 7. 两个基础概念：u/v 与 radar PNG
+
+### 7.1 u/v 的意义
+
+`u/v` 是水平风矢量的两个正交分量，不是两个不同的风场。
+
+```text
+u = east-west component
+v = north-south component
+```
+
+在本项目里约定：
+
+```text
+u > 0：风向东吹
+u < 0：风向西吹
+v > 0：风向北吹
+v < 0：风向南吹
+```
+
+航空气象里常见的 `wind_dir / wind_speed` 表示“风从哪里来”。因此 Stage1 把风向风速转成 `u/v` 时使用：
+
+```text
+u_wind = -wind_speed * sin(wind_dir*pi/180)
+v_wind = -wind_speed * cos(wind_dir*pi/180)
+```
+
+例子：
+
+```text
+wind_dir = 270 deg  表示西风，从西向东吹
+所以 u_wind 为正
+```
+
+Stage4 评估误差时也在 `u/v` 上比较：
+
+```text
+u_error = pred_u - gt_u
+v_error = pred_v - gt_v
+vector_error = sqrt(u_error^2 + v_error^2)
+```
+
+注意：`location` 里的 `u_motion/v_motion` 是飞机地面运动分量，不是大气风。只有 AMDAR/TURB 里的 `u_wind/v_wind` 才能作为 aircraft wind observation。
+
+### 7.2 radar PNG 为什么要这样处理
+
+当前 radar PNG 是二维雷达/云图拼图强度，不是 Doppler 径向速度。因此它在本项目里只作为背景 context 和可视化底图：
+
+```text
+radar PNG intensity = cloud/radar echo context
+radar PNG intensity != wind speed
+radar PNG intensity != wind direction
+radar PNG intensity != Doppler radial velocity
+```
+
+Stage2 对 radar PNG 的处理是：
+
+```text
+1. 从 radar_index.json 读取 radar_path
+2. 用 OpenCV 按灰度图读取 PNG
+3. 下采样到 Stage2 水平网格
+4. 存成 cloud_2d
+```
+
+这样处理的原因：
+
+| 处理 | 目的 |
+| --- | --- |
+| 灰度读取 | 保留雷达/云图强度，不引入颜色表误差。 |
+| 下采样 | 与 Stage2 的 `31 x 525 x 775` 三维体素网格对齐，减少计算量。 |
+| 只存 `cloud_2d` | 明确它只是二维背景层，不是三维风观测。 |
+| 不进 official truth | 防止把雷达回波强度误当风速/风向。 |
+
+所以不用 radar PNG 也能做 aircraft-only 重构；只是少了天气结构背景和可视化底图。真正参与 Stage4 风场重构的是：
+
+```text
+train_current_wind = wind_records - holdout
+context_wind_records
+obs_conf / time_conf / localization / diagnostic weighting
+```
+
+## 8. 参考文献与借用边界
 
 - WMO Aircraft-Based Observations Programme, https://wmo.int/aircraft-based-observations-programme  
   借用点：aircraft wind observations 是正式气象观测来源；本项目据此把 aircraft `wind_records` 作为 strict holdout truth。
@@ -91,3 +172,22 @@ tables/
   借用点：representation error；本项目把 aircraft 点观测与 500 m 网格/6 min 窗口之间的误差从 aircraft observation error 中分离出来解释。
 - Perona and Malik (1990), https://doi.org/10.1109/34.56205  
   借用点：edge-preserving / gradient-preserving smoothing；本项目的 `preserve_strong_layers` 用来降低强垂直结构被跨层平滑抹掉的风险。
+
+## 9. 2026-06-05 新增 demo 结论
+
+新增输出：
+
+```text
+centralized_v1_output/stage4_dynamic_layer_nwp_oi_demo_20260605/
+```
+
+25 个抽样 frame、25 路并行、58 个 strict holdout 点：
+
+| branch | RMSE | MAE | P95 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| aircraft-only fixed vertical loc | 26.589947 | 9.812196 | 40.764004 | 当前小样本最稳。 |
+| aircraft-only support_adaptive vertical loc | 26.742449 | 9.876736 | 39.704757 | P95 略好，但总 RMSE/MAE 变差，暂不升主线。 |
+| aircraft + weak CMA background 0.03 | 26.745099 | 9.905763 | 40.764000 | 弱背景未超过 aircraft-only。 |
+| aircraft + very weak CMA background 0.01 | 26.639229 | 9.839657 | 40.764003 | 接近 aircraft-only，但仍未超过。 |
+
+结论：动态垂直 localization 和 weak CMA/NWP background 都值得继续做分层触发实验，但当前不能替代 `tp26_thr11_preserve` aircraft-only strict holdout 主线。全国重构可以作为 product footprint；validated accuracy 只能写在 aircraft holdout 覆盖到的局部时空点上。

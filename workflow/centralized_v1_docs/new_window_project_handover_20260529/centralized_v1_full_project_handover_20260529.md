@@ -1664,3 +1664,190 @@ max representative RMSE diff between full NPZ and metrics CSV: 0.0
 实现上复用 `centralized_stage4_ground_recon.py` 中的 CMA helper：读取 CMA proxy、应用 CMA background 到 accumulator、对 CMA-only 体素置信度封顶，并在输出表中记录 `cma_temporal_conf_mean`、`cma_rapid_change_fraction`、`cma_background_active_voxels`、`cma_used_as_background_not_truth` 等诊断列。分片并行路径也同步透传 CMA 参数。
 
 后续新窗口注意：如果继续做三方法或 CMA 消融，优先使用该 metrics-only 路径批量评估；只在筛出的代表帧上生成 NPZ/PNG。不要再用 4 帧小样本推断总体优劣。
+
+## 22. 2026-06-02 Stage4 误差来源与逐步解决路线
+
+新增正式交接文档：
+
+```text
+/data/LFT-W02_data/pengxu/workflow/centralized_v1_docs/new_window_project_handover_20260529/centralized_v1_stage4_error_resolution_plan_20260602.md
+```
+
+该文档把 `timepower15` 与 `adaptive_v3` 的 200 帧 strict holdout 结果转成下一步执行计划：
+
+```text
+timepower15 weighted vector RMSE = 15.038701 m/s
+adaptive_v3 weighted vector RMSE = 14.932605 m/s
+improvement = -0.106096 m/s, about -0.71%
+holdout points = 530
+strict_holdout_no_leakage = True
+motion_used_as_wind = False
+```
+
+结论：`adaptive_v3` 是当前更均衡的 Phase 2 候选，但只是小幅稳定提升。它改善了
+`baseline_rmse_10_20` 区间，未解决 P99/max 长尾。
+
+当前误差优先级：
+
+```text
+1. vertical_structure
+2. representation_error
+3. sparse_support
+4. role_conflict
+5. temporal_weighting
+6. tail_qc
+7. localization
+```
+
+下一步不要继续只调一个全局 localization 半径。先按路线图跑：
+
+```text
+Phase 1: adaptive_v3_vertical_preserve
+Phase 1: adaptive_v3_timepower_1.0 / adaptive_v3_timepower_2.0
+Phase 2: support-aware / role-aware adaptive localization code patch
+Phase 3: P95/P99/max tail audit and guardrail
+Phase 4: 200 frames pass before larger holdout-only or 5614-frame strict evaluation
+```
+
+每个候选跑完后统一执行：
+
+```text
+stage/centralized_v1/core/centralized_stage4_pairwise_frame_compare.py
+stage/centralized_v1/core/centralized_stage4_error_source_decomposition.py
+```
+
+新增/已使用输出：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_adaptive_localization_v3_200_20260602/analysis_v3/timepower15_vs_adaptive_v3.md
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_adaptive_localization_v3_200_20260602/error_source_decomposition/timepower15_vs_adaptive_v3_error_sources.md
+```
+
+论文指标解释边界：de Haan / EMADDC 的 aircraft observation sigma 只能说明飞机风观测误差下限。
+当前 Stage4 的 `component RMSE` 约 `10.56 m/s`，主要是 reconstruction、representativeness、
+sparse support、temporal mismatch、vertical extrapolation 等误差叠加，不能写成飞机观测本身不准。
+
+## 23. 2026-06-05 dynamic vertical localization 与 weak NWP background demo
+
+新增输出：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_dynamic_layer_nwp_oi_demo_20260605/
+```
+
+新增/补齐代码：
+
+```text
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+```
+
+补齐点：
+
+```text
+--vertical-localization-policy fixed|support_adaptive
+```
+
+该参数现在可进入 metrics-only sensitivity 路径、25 路 shard 子进程、聚合 CSV/MD 和 run metadata。底层实现仍复用 `centralized_stage4_ground_recon.py` 的 `_dynamic_vertical_localization()`。
+
+### 23.1 demo 口径
+
+共同设置：
+
+```text
+sample_count = 25
+sample_seed = 20260605
+num_workers = 25
+param_grid = 8,4,2,1
+kernel = gaussian
+confidence_mode = diagnostic_weighted
+physics_constraint_mode = pydda_3dvar_proxy
+localization_policy = diagnostic_adaptive_v3
+localization_candidate_grid = 8:4,10:5
+context_time_conf_power = 2.6
+conflict_speed_threshold_mps = 11.0
+vertical_risk_mode = preserve_strong_layers
+```
+
+评价边界：
+
+```text
+truth = current aircraft wind_records strict holdout
+holdout 在融合前移除
+CMA/GFS/ERA 只能作为 weak background / prior
+location/motion 不作为 wind truth
+radar PNG 不作为 Doppler wind
+```
+
+本地未发现可直接消费的 GFS/ERA ROI NPZ，所以 weak NWP demo 使用已有 CMA proxy/reanalysis 背景。这个分支只验证 weak-background 接入和 strict-holdout 比较口径，不把 CMA 当 truth。
+
+### 23.2 dynamic vertical localization 结果
+
+点级 strict holdout，58 个 holdout 点：
+
+```text
+dynamic_fixed_aircraft_only:
+  RMSE = 26.589947
+  MAE  = 9.812196
+  P95  = 40.764004
+  max  = 180.131789
+
+dynamic_support_adaptive_aircraft_only:
+  RMSE = 26.742449
+  MAE  = 9.876736
+  P95  = 39.704757
+  max  = 180.613923
+```
+
+`support_adaptive` 的 vertical sigma factor mean 为 `0.865060`，说明它确实收窄了垂直影响范围。但本 demo 中总 RMSE/MAE 没有改善，只是 P95 略好。结论：暂不升为 official 默认，继续作为分层触发候选。
+
+### 23.3 OI / 3DVar-style weak background 结果
+
+对比：
+
+```text
+aircraft-only fixed:
+  RMSE = 26.589947
+  MAE  = 9.812196
+
+aircraft + weak CMA background, weight 0.03:
+  RMSE = 26.745099
+  MAE  = 9.905763
+
+aircraft + very weak CMA background, weight 0.01:
+  RMSE = 26.639229
+  MAE  = 9.839657
+```
+
+结论：weak CMA background 当前没有超过 aircraft-only。下一步不要全场固定权重融合 NWP；应改成 sparse/no-current-support fallback，或按 altitude / region / context_time_conf 分层启用。
+
+### 23.4 文献对比口径
+
+可以直接做对比的方向：
+
+```text
+1. Sun et al. 2018, aircraft surveillance weather-field reconstruction / Meteo-Particle Model
+2. Marinescu et al. 2022, aircraft-derived wind GPR / Kriging-style local reconstruction
+3. de Haan 2016, Mode-S EHS aircraft-derived wind observation error
+4. EMADDC 2025, operational aircraft weather observations and QC
+5. Cardinali et al. 2003 / Petersen 2016, aircraft data in 4DVAR/NWP
+```
+
+注意：这些文献多数是局部 TMA/receiver coverage、NWP assimilation impact 或 aircraft-derived observation QC，不是全国 current-aircraft strict holdout。对比时要把它们改造成同一 strict-holdout benchmark，不能直接拿文献指标和本项目 RMSE 做绝对优劣比较。
+
+### 23.5 全国重构与局部 holdout
+
+当前正确表述：
+
+```text
+全国重构 = product footprint
+局部 holdout = validated accuracy footprint
+```
+
+可以在全国境内生成三维风场，但 official accuracy 只能在 aircraft `wind_records` strict holdout 覆盖到的时空点上报告。无飞机 holdout 的全国区域只能报告 coverage/confidence/background diagnostics，不能报告 validated RMSE。
+
+建议下一步做两个实验包：
+
+```text
+1. 全国产品包：recon + confidence + coverage + weak background diagnostics。
+2. 局部论文对比包：选机场/TMA 或高密航路区域，对齐 Sun/Marinescu 这类局部重构论文。
+```

@@ -667,3 +667,64 @@ representative_visuals:
 `stage/centralized_v1/core/centralized_stage4_sensitivity.py` 已加入 CMA metrics-only 支持。新增 CLI 参数覆盖 `--cma-fusion-mode`、`--cma-proxy-dir`、`--cma-background-weight`、`--cma-confidence-source`、`--cma-confidence-cap`、`--cma-qc-gating` 等。实现上复用 Stage4 ground recon 的 CMA helper，在 metrics-only 路径中加载 CMA proxy、注入 weak background、封顶 CMA-only 置信度，并输出 CMA 诊断列。分片并行路径也已透传这些参数。
 
 后续建议：批量对比继续走 metrics-only；只对筛选后的代表帧生成 NPZ/PNG。不要再用 4 帧小样本判断三方法总体优劣。
+
+## 2026-06-02 更新：Stage4 误差来源与逐步解决计划
+
+新增交接文档：
+
+```text
+/data/LFT-W02_data/pengxu/workflow/centralized_v1_docs/new_window_project_handover_20260529/centralized_v1_stage4_error_resolution_plan_20260602.md
+```
+
+最新 200 帧 strict holdout 结果：
+
+```text
+timepower15 weighted vector RMSE: 15.038701
+adaptive_v3 weighted vector RMSE: 14.932605
+adaptive_v3 improvement: -0.106096 m/s, about -0.71%
+holdout points: 530
+strict_holdout_no_leakage: True
+motion_used_as_wind: False
+```
+
+解释：`adaptive_v3` 是当前更好的轻量候选，但提升很小，主要改善
+`baseline_rmse_10_20`，并没有解决 P99/max 长尾。下一步的主矛盾不是单一
+localization 半径，而是：
+
+```text
+vertical_structure
+representation_error
+sparse_support
+role_conflict
+temporal_weighting
+tail_qc
+localization
+```
+
+优先运行顺序：
+
+```text
+1. adaptive_v3_vertical_preserve
+2. adaptive_v3_timepower_1.0 / adaptive_v3_timepower_2.0
+3. support-aware / role-aware adaptive localization patch
+4. top-tail audit and P95/P99 guardrail
+5. 200-frame pass first, then larger holdout-only / 5614-frame strict evaluation
+```
+
+固定对比脚本：
+
+```text
+stage/centralized_v1/core/centralized_stage4_pairwise_frame_compare.py
+stage/centralized_v1/core/centralized_stage4_error_source_decomposition.py
+```
+
+关键现有报告：
+
+```text
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_adaptive_localization_v3_200_20260602/analysis_v3/timepower15_vs_adaptive_v3.md
+/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_adaptive_localization_v3_200_20260602/error_source_decomposition/timepower15_vs_adaptive_v3_error_sources.md
+```
+
+写论文/给老师解释时必须说明：de Haan 2016 和 EMADDC 2025 给的是 aircraft wind
+observation error prior，不是 Stage4 重构 RMSE 目标。当前误差显著高于这些 sigma，
+说明需要处理代表性误差、稀疏支撑、高空垂直结构和时空权重，而不是说飞机风观测本身错误很大。
