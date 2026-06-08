@@ -299,6 +299,8 @@ def _evaluate_metrics_only(
         "adaptive_reasons": "fixed",
         "adaptive_no_holdout_inputs_used": True,
     }
+    if localization_policy == "point_regime_localization_v1":
+        adaptive_diagnostics["adaptive_reasons"] = "point_regime_training_only_support_map_base_fixed"
     if localization_policy in {
         "diagnostic_adaptive",
         "diagnostic_adaptive_v3",
@@ -356,6 +358,7 @@ def _evaluate_metrics_only(
     )
     vertical_localization_diag = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
     srha_horizontal_diag = dict(acc.get("srha_horizontal_scalar_diagnostics", {}))
+    point_regime_diag = dict(acc.get("point_regime_localization_scalar_diagnostics", {}))
     time_str = str(stage2_row["time_str"])
     cma_path = cma_proxy_npz
     if cma_path is None:
@@ -557,6 +560,35 @@ def _evaluate_metrics_only(
         "srha_stale_context_gate_count": int(srha_horizontal_diag.get("stale_context_gate_count", 0)),
         "srha_sparse_fresh_widen_gate_count": int(srha_horizontal_diag.get("sparse_fresh_widen_gate_count", 0)),
         "srha_dense_current_gate_count": int(srha_horizontal_diag.get("dense_current_gate_count", 0)),
+        "point_regime_localization_enabled": bool(point_regime_diag.get("point_regime_localization_enabled", False)),
+        "point_regime_localization_uses_holdout_truth": bool(
+            point_regime_diag.get("point_regime_localization_uses_holdout_truth", False)
+        ),
+        "point_regime_xy_sigma_factor_mean": (
+            point_regime_diag.get("point_regime_xy_sigma_factor_stats", {}) or {}
+        ).get("mean"),
+        "point_regime_xy_sigma_factor_min": (
+            point_regime_diag.get("point_regime_xy_sigma_factor_stats", {}) or {}
+        ).get("min"),
+        "point_regime_xy_sigma_factor_max": (
+            point_regime_diag.get("point_regime_xy_sigma_factor_stats", {}) or {}
+        ).get("max"),
+        "point_regime_z_sigma_factor_mean": (
+            point_regime_diag.get("point_regime_z_sigma_factor_stats", {}) or {}
+        ).get("mean"),
+        "point_regime_z_sigma_factor_min": (
+            point_regime_diag.get("point_regime_z_sigma_factor_stats", {}) or {}
+        ).get("min"),
+        "point_regime_z_sigma_factor_max": (
+            point_regime_diag.get("point_regime_z_sigma_factor_stats", {}) or {}
+        ).get("max"),
+        "point_regime_remote_current_fraction": float(point_regime_diag.get("point_regime_remote_current_fraction", 0.0)),
+        "point_regime_role_gap_fraction": float(point_regime_diag.get("point_regime_role_gap_fraction", 0.0)),
+        "point_regime_vertical_gap_fraction": float(point_regime_diag.get("point_regime_vertical_gap_fraction", 0.0)),
+        "point_regime_stable_sparse_widen_fraction": float(
+            point_regime_diag.get("point_regime_stable_sparse_widen_fraction", 0.0)
+        ),
+        "point_regime_reason_counts": str(point_regime_diag.get("point_regime_reason_counts", "")),
         "vertical_risk_refine_enabled": float(refine_metrics.get("vertical_risk_refine_enabled", 0.0)),
         "vertical_risk_candidate_voxels_last": int(refine_metrics.get("vertical_risk_candidate_voxels_last", 0.0)),
         "vertical_oversmooth_preserve_voxels_last": int(refine_metrics.get("vertical_oversmooth_preserve_voxels_last", 0.0)),

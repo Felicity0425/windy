@@ -80,6 +80,7 @@ LOCALIZATION_POLICIES = {
     "diagnostic_adaptive",
     "diagnostic_adaptive_v3",
     "diagnostic_adaptive_regime_v4",
+    "point_regime_localization_v1",
     "support_role_height_aware",
 }
 GUARDED_VERTICAL_LOCALIZATION_POLICIES = {"guarded_dynamic_v2", "guarded_vertical_dynamic_v2"}
@@ -217,6 +218,33 @@ DEFAULT_QC_CALIBRATION = {
     "adaptive_localization_srha_horizontal_sparse_fresh_factor": 1.10,
     "adaptive_localization_srha_vertical_role_gap_factor": 0.85,
     "adaptive_localization_srha_vertical_stale_context_factor": 0.85,
+    "point_regime_localization_support_radius_xy": 8.0,
+    "point_regime_localization_support_radius_z": 2.0,
+    "point_regime_localization_near_current_distance_vox": 2.0,
+    "point_regime_localization_remote_current_distance_vox": 4.0,
+    "point_regime_localization_sparse_current_count": 1.0,
+    "point_regime_localization_dense_current_count": 4.0,
+    "point_regime_localization_mid_altitude_m": 9000.0,
+    "point_regime_localization_high_altitude_m": 12000.0,
+    "point_regime_localization_moderate_role_gap_mps": 18.0,
+    "point_regime_localization_high_role_gap_mps": 30.0,
+    "point_regime_localization_vertical_gap_start_mps": 8.0,
+    "point_regime_localization_vertical_gap_full_mps": 25.0,
+    "point_regime_localization_min_xy_factor": 0.94,
+    "point_regime_localization_max_xy_factor": 1.04,
+    "point_regime_localization_min_z_factor": 0.88,
+    "point_regime_localization_max_z_factor": 1.02,
+    "point_regime_localization_remote_xy_factor": 1.00,
+    "point_regime_localization_high_altitude_xy_factor": 0.99,
+    "point_regime_localization_role_gap_xy_factor": 0.96,
+    "point_regime_localization_vertical_gap_xy_factor": 0.97,
+    "point_regime_localization_context_only_xy_factor": 1.00,
+    "point_regime_localization_stable_sparse_xy_factor": 1.02,
+    "point_regime_localization_high_altitude_z_factor": 0.98,
+    "point_regime_localization_role_gap_z_factor": 0.94,
+    "point_regime_localization_vertical_gap_z_factor": 0.90,
+    "point_regime_localization_remote_z_factor": 1.00,
+    "point_regime_localization_stable_sparse_z_factor": 1.01,
     "cma_gated_sparse_current_norm_threshold": 0.18,
     "cma_gated_min_effective_conf": 0.02,
     "cma_strict_min_temporal_conf": 0.55,
@@ -740,6 +768,290 @@ def _localization_weights(
         vertical = np.abs(dz / sigma_z).astype(np.float32)
         return (_gaspari_cohn_1d(horizontal) * _gaspari_cohn_1d(vertical)).astype(np.float32)
     raise ValueError(f"Unsupported localization kernel: {kernel}")
+
+
+def _localization_weights_with_sigma_fields(
+    dx: np.ndarray,
+    dy: np.ndarray,
+    dz: np.ndarray,
+    sigma_xy: np.ndarray,
+    sigma_z: np.ndarray,
+    kernel: str,
+) -> np.ndarray:
+    sigma_xy = np.maximum(np.asarray(sigma_xy, dtype=np.float32), np.float32(1e-6))
+    sigma_z = np.maximum(np.asarray(sigma_z, dtype=np.float32), np.float32(1e-6))
+    if kernel == "gaussian":
+        return np.exp(
+            -0.5 * ((dy / sigma_xy) ** 2 + (dx / sigma_xy) ** 2 + (dz / sigma_z) ** 2)
+        ).astype(np.float32)
+    if kernel == "gaspari_cohn":
+        horizontal = np.sqrt((dx / sigma_xy) ** 2 + (dy / sigma_xy) ** 2, dtype=np.float32)
+        vertical = np.abs(dz / sigma_z).astype(np.float32)
+        return (_gaspari_cohn_1d(horizontal) * _gaspari_cohn_1d(vertical)).astype(np.float32)
+    raise ValueError(f"Unsupported localization kernel: {kernel}")
+
+
+def _field_factor_stats(values: np.ndarray, mask: np.ndarray | None = None) -> dict[str, float | int | None]:
+    arr = np.asarray(values, dtype=np.float32)
+    if mask is not None:
+        arr = arr[np.asarray(mask, dtype=bool)]
+    finite = arr[np.isfinite(arr)]
+    return _factor_stats([float(value) for value in finite.ravel()])
+
+
+def _build_point_regime_localization_context(
+    shape: tuple[int, int, int],
+    observations: list[dict[str, Any]],
+    *,
+    base_radius_xy: int,
+    base_radius_z: int,
+    base_sigma_xy: float,
+    base_sigma_z: float,
+    localization_kernel: str,
+    qc_calibration: dict[str, Any],
+) -> dict[str, Any]:
+    z_dim, h_dim, w_dim = shape
+    support_radius_xy = max(
+        1,
+        int(round(_cal_float(qc_calibration, "point_regime_localization_support_radius_xy", float(base_radius_xy)))),
+    )
+    support_radius_z = max(
+        0,
+        int(round(_cal_float(qc_calibration, "point_regime_localization_support_radius_z", float(base_radius_z)))),
+    )
+    support_sigma_xy = max(1e-6, float(base_sigma_xy))
+    support_sigma_z = max(1e-6, float(base_sigma_z))
+
+    current_count = np.zeros(shape, dtype=np.float32)
+    context_count = np.zeros(shape, dtype=np.float32)
+    nearest_current_distance = np.full(shape, np.float32(1.0e6), dtype=np.float32)
+    current_u = np.zeros(shape, dtype=np.float32)
+    current_v = np.zeros(shape, dtype=np.float32)
+    current_w = np.zeros(shape, dtype=np.float32)
+    context_u = np.zeros(shape, dtype=np.float32)
+    context_v = np.zeros(shape, dtype=np.float32)
+    context_w = np.zeros(shape, dtype=np.float32)
+
+    for row in observations:
+        z = int(row["z"])
+        y = int(row["y"])
+        x = int(row["x"])
+        if not (0 <= z < z_dim and 0 <= y < h_dim and 0 <= x < w_dim):
+            continue
+        z0 = max(0, z - support_radius_z)
+        z1 = min(z_dim, z + support_radius_z + 1)
+        y0 = max(0, y - support_radius_xy)
+        y1 = min(h_dim, y + support_radius_xy + 1)
+        x0 = max(0, x - support_radius_xy)
+        x1 = min(w_dim, x + support_radius_xy + 1)
+
+        dz = (np.arange(z0, z1, dtype=np.float32) - float(z))[:, None, None]
+        dy = (np.arange(y0, y1, dtype=np.float32) - float(y))[None, :, None]
+        dx = (np.arange(x0, x1, dtype=np.float32) - float(x))[None, None, :]
+        localization = _localization_weights(dx, dy, dz, support_sigma_xy, support_sigma_z, localization_kernel)
+        local_w = localization * np.float32(row["base_weight"])
+        source_role = str(row.get("source_role"))
+        if source_role == "current_wind_train":
+            current_count[z0:z1, y0:y1, x0:x1] += 1.0
+            distance = np.sqrt((dx * dx + dy * dy + dz * dz).astype(np.float32)).astype(np.float32)
+            nearest_current_distance[z0:z1, y0:y1, x0:x1] = np.minimum(
+                nearest_current_distance[z0:z1, y0:y1, x0:x1],
+                distance,
+            )
+            current_u[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * local_w
+            current_v[z0:z1, y0:y1, x0:x1] += np.float32(row["v"]) * local_w
+            current_w[z0:z1, y0:y1, x0:x1] += local_w
+        elif source_role == "context_wind":
+            context_count[z0:z1, y0:y1, x0:x1] += 1.0
+            context_u[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * local_w
+            context_v[z0:z1, y0:y1, x0:x1] += np.float32(row["v"]) * local_w
+            context_w[z0:z1, y0:y1, x0:x1] += local_w
+
+    active_support = (current_w > 0.0) | (context_w > 0.0)
+    nearest_current_distance = np.where(
+        np.isfinite(nearest_current_distance) & (nearest_current_distance < 1.0e5),
+        nearest_current_distance,
+        np.float32(support_radius_xy + support_radius_z + 1),
+    ).astype(np.float32)
+    current_mean_u = np.divide(current_u, np.maximum(current_w, 1e-6), out=np.zeros_like(current_u), where=current_w > 0.0)
+    current_mean_v = np.divide(current_v, np.maximum(current_w, 1e-6), out=np.zeros_like(current_v), where=current_w > 0.0)
+    context_mean_u = np.divide(context_u, np.maximum(context_w, 1e-6), out=np.zeros_like(context_u), where=context_w > 0.0)
+    context_mean_v = np.divide(context_v, np.maximum(context_w, 1e-6), out=np.zeros_like(context_v), where=context_w > 0.0)
+    both_roles = (current_w > 0.0) & (context_w > 0.0)
+    role_gap = np.where(
+        both_roles,
+        np.sqrt(((current_mean_u - context_mean_u) ** 2 + (current_mean_v - context_mean_v) ** 2).astype(np.float32)),
+        0.0,
+    ).astype(np.float32)
+
+    combined_w = current_w + context_w
+    combined_u = np.divide(
+        current_u + context_u,
+        np.maximum(combined_w, 1e-6),
+        out=np.zeros_like(combined_w),
+        where=combined_w > 0.0,
+    ).astype(np.float32)
+    combined_v = np.divide(
+        current_v + context_v,
+        np.maximum(combined_w, 1e-6),
+        out=np.zeros_like(combined_w),
+        where=combined_w > 0.0,
+    ).astype(np.float32)
+    combined_speed = np.sqrt((combined_u**2 + combined_v**2).astype(np.float32)).astype(np.float32)
+    vertical_jump = _vertical_jump_field(combined_u, combined_v)
+    vertical_neighbor_mean, _ = _vertical_neighbor_speed_stats(combined_u, combined_v)
+    vertical_gap = np.where(
+        active_support,
+        np.maximum(vertical_jump, np.abs(combined_speed - vertical_neighbor_mean)),
+        0.0,
+    ).astype(np.float32)
+
+    z_alt = (ALT_MIN + np.arange(z_dim, dtype=np.float32) * np.float32(DELTA_ALT))[:, None, None]
+    altitude = np.broadcast_to(z_alt, shape).astype(np.float32)
+    near_distance = _cal_float(qc_calibration, "point_regime_localization_near_current_distance_vox", 2.0)
+    remote_distance = _cal_float(qc_calibration, "point_regime_localization_remote_current_distance_vox", 4.0)
+    sparse_current_count = _cal_float(qc_calibration, "point_regime_localization_sparse_current_count", 1.0)
+    dense_current_count = _cal_float(qc_calibration, "point_regime_localization_dense_current_count", 4.0)
+    mid_altitude = _cal_float(qc_calibration, "point_regime_localization_mid_altitude_m", 9000.0)
+    high_altitude = _cal_float(qc_calibration, "point_regime_localization_high_altitude_m", 12000.0)
+    moderate_role_gap = _cal_float(qc_calibration, "point_regime_localization_moderate_role_gap_mps", 18.0)
+    high_role_gap = _cal_float(qc_calibration, "point_regime_localization_high_role_gap_mps", 30.0)
+    vertical_gap_start = _cal_float(qc_calibration, "point_regime_localization_vertical_gap_start_mps", 8.0)
+    vertical_gap_full = max(
+        vertical_gap_start + 1e-6,
+        _cal_float(qc_calibration, "point_regime_localization_vertical_gap_full_mps", 25.0),
+    )
+
+    high_altitude_mask = altitude >= np.float32(high_altitude)
+    mid_altitude_mask = (altitude >= np.float32(mid_altitude)) & ~high_altitude_mask
+    remote_current_mask = nearest_current_distance >= np.float32(remote_distance)
+    sparse_current_mask = current_count <= np.float32(sparse_current_count)
+    context_only_mask = (context_w > 0.0) & (current_w <= 0.0)
+    role_gap_mask = role_gap >= np.float32(moderate_role_gap)
+    high_role_gap_mask = role_gap >= np.float32(high_role_gap)
+    vertical_gap_mask = vertical_gap >= np.float32(vertical_gap_start)
+    stable_sparse_widen_mask = (
+        sparse_current_mask
+        & (nearest_current_distance <= np.float32(remote_distance))
+        & (role_gap < np.float32(moderate_role_gap))
+        & (vertical_gap < np.float32(vertical_gap_start))
+        & (altitude < np.float32(high_altitude))
+        & active_support
+    )
+    dense_current_mask = current_count >= np.float32(dense_current_count)
+
+    xy_factor = np.ones(shape, dtype=np.float32)
+    z_factor = np.ones(shape, dtype=np.float32)
+    xy_factor = np.where(
+        remote_current_mask,
+        xy_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_remote_xy_factor", 0.94)),
+        xy_factor,
+    )
+    xy_factor = np.where(
+        high_altitude_mask | mid_altitude_mask,
+        xy_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_high_altitude_xy_factor", 0.94)),
+        xy_factor,
+    )
+    xy_factor = np.where(
+        role_gap_mask,
+        xy_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_role_gap_xy_factor", 0.92)),
+        xy_factor,
+    )
+    xy_factor = np.where(
+        vertical_gap_mask,
+        xy_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_vertical_gap_xy_factor", 0.94)),
+        xy_factor,
+    )
+    xy_factor = np.where(
+        context_only_mask,
+        xy_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_context_only_xy_factor", 0.96)),
+        xy_factor,
+    )
+    xy_factor = np.where(
+        stable_sparse_widen_mask,
+        xy_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_stable_sparse_xy_factor", 1.04)),
+        xy_factor,
+    )
+
+    z_factor = np.where(
+        remote_current_mask,
+        z_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_remote_z_factor", 0.94)),
+        z_factor,
+    )
+    z_factor = np.where(
+        high_altitude_mask | mid_altitude_mask,
+        z_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_high_altitude_z_factor", 0.90)),
+        z_factor,
+    )
+    z_factor = np.where(
+        role_gap_mask,
+        z_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_role_gap_z_factor", 0.88)),
+        z_factor,
+    )
+    z_factor = np.where(
+        vertical_gap_mask,
+        z_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_vertical_gap_z_factor", 0.84)),
+        z_factor,
+    )
+    z_factor = np.where(
+        stable_sparse_widen_mask,
+        z_factor * np.float32(_cal_float(qc_calibration, "point_regime_localization_stable_sparse_z_factor", 1.02)),
+        z_factor,
+    )
+
+    xy_factor = np.clip(
+        xy_factor,
+        np.float32(_cal_float(qc_calibration, "point_regime_localization_min_xy_factor", 0.84)),
+        np.float32(_cal_float(qc_calibration, "point_regime_localization_max_xy_factor", 1.06)),
+    ).astype(np.float32)
+    z_factor = np.clip(
+        z_factor,
+        np.float32(_cal_float(qc_calibration, "point_regime_localization_min_z_factor", 0.78)),
+        np.float32(_cal_float(qc_calibration, "point_regime_localization_max_z_factor", 1.04)),
+    ).astype(np.float32)
+    radius_xy = np.maximum(1, np.rint(float(base_radius_xy) * xy_factor).astype(np.int16)) if base_radius_xy > 0 else np.zeros(shape, dtype=np.int16)
+    radius_z = np.maximum(0, np.rint(float(base_radius_z) * z_factor).astype(np.int16)) if base_radius_z > 0 else np.zeros(shape, dtype=np.int16)
+
+    active_count = max(1, int(np.count_nonzero(active_support)))
+    reason_counts = {
+        "active_support_voxels": int(np.count_nonzero(active_support)),
+        "remote_current_voxels": int(np.count_nonzero(remote_current_mask & active_support)),
+        "sparse_current_voxels": int(np.count_nonzero(sparse_current_mask & active_support)),
+        "dense_current_voxels": int(np.count_nonzero(dense_current_mask & active_support)),
+        "context_only_voxels": int(np.count_nonzero(context_only_mask & active_support)),
+        "role_gap_voxels": int(np.count_nonzero(role_gap_mask & active_support)),
+        "high_role_gap_voxels": int(np.count_nonzero(high_role_gap_mask & active_support)),
+        "vertical_gap_voxels": int(np.count_nonzero(vertical_gap_mask & active_support)),
+        "high_altitude_voxels": int(np.count_nonzero(high_altitude_mask & active_support)),
+        "stable_sparse_widen_voxels": int(np.count_nonzero(stable_sparse_widen_mask & active_support)),
+    }
+    diagnostics = {
+        "point_regime_localization_enabled": True,
+        "point_regime_localization_uses_holdout_truth": False,
+        "point_regime_localization_source": "training_current_and_context_observation_support_map",
+        "point_regime_support_radius_xy": int(support_radius_xy),
+        "point_regime_support_radius_z": int(support_radius_z),
+        "point_regime_xy_sigma_factor_stats": _field_factor_stats(xy_factor, active_support),
+        "point_regime_z_sigma_factor_stats": _field_factor_stats(z_factor, active_support),
+        "point_regime_current_count_stats": _field_factor_stats(current_count, active_support),
+        "point_regime_nearest_current_distance_stats": _field_factor_stats(nearest_current_distance, active_support),
+        "point_regime_role_gap_stats_mps": _field_factor_stats(role_gap, active_support),
+        "point_regime_vertical_gap_stats_mps": _field_factor_stats(vertical_gap, active_support),
+        "point_regime_max_radius_xy": int(np.max(radius_xy)) if radius_xy.size else int(base_radius_xy),
+        "point_regime_max_radius_z": int(np.max(radius_z)) if radius_z.size else int(base_radius_z),
+        "point_regime_reason_counts": json.dumps(reason_counts, ensure_ascii=False, sort_keys=True),
+        "point_regime_remote_current_fraction": float(reason_counts["remote_current_voxels"] / active_count),
+        "point_regime_role_gap_fraction": float(reason_counts["role_gap_voxels"] / active_count),
+        "point_regime_vertical_gap_fraction": float(reason_counts["vertical_gap_voxels"] / active_count),
+        "point_regime_stable_sparse_widen_fraction": float(reason_counts["stable_sparse_widen_voxels"] / active_count),
+    }
+    return {
+        "point_regime_xy_sigma_factor_3d": xy_factor,
+        "point_regime_z_sigma_factor_3d": z_factor,
+        "point_regime_radius_xy_3d": radius_xy,
+        "point_regime_radius_z_3d": radius_z,
+        "point_regime_localization_scalar_diagnostics": diagnostics,
+    }
 
 
 def _is_guarded_vertical_policy(policy: str) -> bool:
@@ -1448,7 +1760,7 @@ def _accumulate_localized(
         "sparse_fresh_widen_gate_count": 0,
         "dense_current_gate_count": 0,
     }
-    localization_context = localization_context or {}
+    localization_context = dict(localization_context or {})
     component_gap = np.zeros(shape, dtype=np.float32)
     threshold_field = np.zeros(shape, dtype=np.float32)
     context_factor_field = np.zeros(shape, dtype=np.float32)
@@ -1492,6 +1804,39 @@ def _accumulate_localized(
         raise ValueError(f"Unsupported role_conflict_mode={role_conflict_mode}; choose {sorted(ROLE_CONFLICT_MODES)}")
     conflict_speed_threshold_mps = float(max(0.0, conflict_speed_threshold_mps))
     conflict_context_factor = float(np.clip(conflict_context_factor, 0.0, 1.0))
+    point_regime_active = localization_policy == "point_regime_localization_v1"
+    if point_regime_active:
+        localization_context.update(
+            _build_point_regime_localization_context(
+                shape,
+                observations,
+                base_radius_xy=radius_xy,
+                base_radius_z=radius_z,
+                base_sigma_xy=sigma_xy,
+                base_sigma_z=sigma_z,
+                localization_kernel=localization_kernel,
+                qc_calibration=calibration,
+            )
+        )
+    point_regime_diagnostics = dict(localization_context.get("point_regime_localization_scalar_diagnostics", {}))
+    point_regime_xy_factor = np.asarray(
+        localization_context.get("point_regime_xy_sigma_factor_3d", np.ones(shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    point_regime_z_factor = np.asarray(
+        localization_context.get("point_regime_z_sigma_factor_3d", np.ones(shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    point_regime_radius_xy = np.asarray(
+        localization_context.get("point_regime_radius_xy_3d", np.full(shape, radius_xy, dtype=np.int16)),
+        dtype=np.int16,
+    )
+    point_regime_radius_z = np.asarray(
+        localization_context.get("point_regime_radius_z_3d", np.full(shape, radius_z, dtype=np.int16)),
+        dtype=np.int16,
+    )
+    point_regime_max_radius_xy = int(point_regime_diagnostics.get("point_regime_max_radius_xy", radius_xy) or radius_xy)
+    point_regime_max_radius_z = int(point_regime_diagnostics.get("point_regime_max_radius_z", radius_z) or radius_z)
 
     for row in observations:
         z = int(row["z"])
@@ -1526,6 +1871,9 @@ def _accumulate_localized(
                 srha_gate_counts[gate_key] += 1
         row_radius_z = int(vertical_loc["radius_z"])
         row_sigma_z = float(vertical_loc["sigma_z"])
+        if point_regime_active:
+            row_radius_xy = max(row_radius_xy, point_regime_max_radius_xy)
+            row_radius_z = max(row_radius_z, point_regime_max_radius_z)
         factor = float(vertical_loc["sigma_factor"])
         reason = str(vertical_loc["reason"])
         vertical_sigma_factors.append(factor)
@@ -1566,7 +1914,27 @@ def _accumulate_localized(
         dz = (np.arange(z0, z1, dtype=np.float32) - float(z))[:, None, None]
         dy = (np.arange(y0, y1, dtype=np.float32) - float(y))[None, :, None]
         dx = (np.arange(x0, x1, dtype=np.float32) - float(x))[None, None, :]
-        localization = _localization_weights(dx, dy, dz, row_sigma_xy, row_sigma_z, localization_kernel)
+        if point_regime_active:
+            xy_factor_patch = point_regime_xy_factor[z0:z1, y0:y1, x0:x1]
+            z_factor_patch = point_regime_z_factor[z0:z1, y0:y1, x0:x1]
+            target_radius_xy = point_regime_radius_xy[z0:z1, y0:y1, x0:x1]
+            target_radius_z = point_regime_radius_z[z0:z1, y0:y1, x0:x1]
+            localization = _localization_weights_with_sigma_fields(
+                dx,
+                dy,
+                dz,
+                np.float32(row_sigma_xy) * xy_factor_patch,
+                np.float32(row_sigma_z) * z_factor_patch,
+                localization_kernel,
+            )
+            in_target_radius = (
+                (np.abs(dx) <= target_radius_xy)
+                & (np.abs(dy) <= target_radius_xy)
+                & (np.abs(dz) <= target_radius_z)
+            )
+            localization = np.where(in_target_radius, localization, 0.0).astype(np.float32)
+        else:
+            localization = _localization_weights(dx, dy, dz, row_sigma_xy, row_sigma_z, localization_kernel)
         local_w = localization * np.float32(row["base_weight"])
 
         acc_u[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * local_w
@@ -1717,6 +2085,12 @@ def _accumulate_localized(
             "srha_horizontal_base_radius_xy": int(radius_xy),
             "srha_horizontal_base_sigma_xy": float(sigma_xy),
             **srha_gate_counts,
+        },
+        "point_regime_localization_scalar_diagnostics": point_regime_diagnostics
+        if point_regime_diagnostics
+        else {
+            "point_regime_localization_enabled": False,
+            "point_regime_localization_uses_holdout_truth": False,
         },
     }
 
@@ -3661,6 +4035,8 @@ def process_frame(
         "adaptive_reasons": "fixed",
         "adaptive_no_holdout_inputs_used": True,
     }
+    if str(localization_policy) == "point_regime_localization_v1":
+        adaptive_diagnostics["adaptive_reasons"] = "point_regime_training_only_support_map_base_fixed"
     if str(localization_policy) in {
         "diagnostic_adaptive",
         "diagnostic_adaptive_v3",
@@ -3718,6 +4094,7 @@ def process_frame(
     )
     vertical_localization_diagnostics = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
     srha_horizontal_diagnostics = dict(acc.get("srha_horizontal_scalar_diagnostics", {}))
+    point_regime_localization_diagnostics = dict(acc.get("point_regime_localization_scalar_diagnostics", {}))
     cma_path = cma_proxy_npz
     if cma_path is None:
         cma_path = _find_cma_proxy_npz(cma_proxy_dir, time_str)
@@ -3863,6 +4240,43 @@ def process_frame(
         "srha_stale_context_gate_count": int(srha_horizontal_diagnostics.get("stale_context_gate_count", 0)),
         "srha_sparse_fresh_widen_gate_count": int(srha_horizontal_diagnostics.get("sparse_fresh_widen_gate_count", 0)),
         "srha_dense_current_gate_count": int(srha_horizontal_diagnostics.get("dense_current_gate_count", 0)),
+        "point_regime_localization_enabled": bool(
+            point_regime_localization_diagnostics.get("point_regime_localization_enabled", False)
+        ),
+        "point_regime_localization_uses_holdout_truth": bool(
+            point_regime_localization_diagnostics.get("point_regime_localization_uses_holdout_truth", False)
+        ),
+        "point_regime_xy_sigma_factor_mean": (
+            point_regime_localization_diagnostics.get("point_regime_xy_sigma_factor_stats", {}) or {}
+        ).get("mean"),
+        "point_regime_xy_sigma_factor_min": (
+            point_regime_localization_diagnostics.get("point_regime_xy_sigma_factor_stats", {}) or {}
+        ).get("min"),
+        "point_regime_xy_sigma_factor_max": (
+            point_regime_localization_diagnostics.get("point_regime_xy_sigma_factor_stats", {}) or {}
+        ).get("max"),
+        "point_regime_z_sigma_factor_mean": (
+            point_regime_localization_diagnostics.get("point_regime_z_sigma_factor_stats", {}) or {}
+        ).get("mean"),
+        "point_regime_z_sigma_factor_min": (
+            point_regime_localization_diagnostics.get("point_regime_z_sigma_factor_stats", {}) or {}
+        ).get("min"),
+        "point_regime_z_sigma_factor_max": (
+            point_regime_localization_diagnostics.get("point_regime_z_sigma_factor_stats", {}) or {}
+        ).get("max"),
+        "point_regime_remote_current_fraction": float(
+            point_regime_localization_diagnostics.get("point_regime_remote_current_fraction", 0.0)
+        ),
+        "point_regime_role_gap_fraction": float(
+            point_regime_localization_diagnostics.get("point_regime_role_gap_fraction", 0.0)
+        ),
+        "point_regime_vertical_gap_fraction": float(
+            point_regime_localization_diagnostics.get("point_regime_vertical_gap_fraction", 0.0)
+        ),
+        "point_regime_stable_sparse_widen_fraction": float(
+            point_regime_localization_diagnostics.get("point_regime_stable_sparse_widen_fraction", 0.0)
+        ),
+        "point_regime_reason_counts": str(point_regime_localization_diagnostics.get("point_regime_reason_counts", "")),
         "current_weight_boost": float(current_weight_boost),
         "context_weight_scale": float(context_weight_scale),
         "context_time_conf_power": float(context_time_conf_power),
@@ -3906,6 +4320,7 @@ def process_frame(
         "field_diagnostics": field_diagnostics,
         "role_conflict_diagnostics": role_conflict_diagnostics,
         "vertical_localization_diagnostics": vertical_localization_diagnostics,
+        "point_regime_localization_diagnostics": point_regime_localization_diagnostics,
         "cma_fusion_diagnostics": cma_fusion_diagnostics,
         "display_fill_diagnostics": display_fill_diagnostics,
         "reliability_diagnostics": reliability_diagnostics,
@@ -3946,6 +4361,9 @@ def process_frame(
             "stage4_field_diagnostics_json": np.array(json.dumps(field_diagnostics, ensure_ascii=False)),
             "stage4_role_conflict_diagnostics_json": np.array(json.dumps(role_conflict_diagnostics, ensure_ascii=False)),
             "stage4_vertical_localization_diagnostics_json": np.array(json.dumps(vertical_localization_diagnostics, ensure_ascii=False)),
+            "stage4_point_regime_localization_diagnostics_json": np.array(
+                json.dumps(point_regime_localization_diagnostics, ensure_ascii=False)
+            ),
             "stage4_cma_fusion_diagnostics_json": np.array(json.dumps(cma_fusion_diagnostics, ensure_ascii=False)),
             C4_DISPLAY_FILL_DIAGNOSTICS_JSON: np.array(json.dumps(display_fill_diagnostics, ensure_ascii=False)),
             C4_RELIABILITY_DIAGNOSTICS_JSON: np.array(json.dumps(reliability_diagnostics, ensure_ascii=False)),
@@ -3997,6 +4415,7 @@ def process_frame(
         **role_conflict_diagnostics,
         **vertical_localization_diagnostics,
         **srha_horizontal_diagnostics,
+        **point_regime_localization_diagnostics,
         **cma_fusion_diagnostics,
         "display_fill_mode": str(display_fill_mode),
         "display_fill_source": str(display_fill_source),

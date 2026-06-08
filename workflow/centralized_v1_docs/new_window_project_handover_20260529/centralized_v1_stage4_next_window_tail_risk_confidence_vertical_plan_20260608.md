@@ -8,14 +8,15 @@
 tp26_thr11_preserve
 ```
 
-已经完成 Step 1-3、representation-error report-only、representation soft-weight candidate 的代码、
-smoke 验证和 200 帧 formal gate，但没有把任何新分支升默认：
+已经完成 Step 1-3、representation-error report-only、representation soft-weight candidate、
+point-regime localization candidate 的代码、smoke 验证和 200 帧 formal gate，但没有把任何新分支升默认：
 
 ```text
 Step 1 tail_risk_score report-only: 已完成，证明 tail-risk/no-claim 方向有效。
 Step 2 confidence_v2_reliability: 已完成，新增 reliability/tail/no-claim 3D 输出，不改 recon。
 Step 3 guarded_vertical_dynamic_v2: 已完成代码、两帧 smoke、200 帧/530 点 formal gate；结果 FAIL，不升默认。
 Step 4a representation_error_soft_weighted: 已完成代码、两帧 smoke、200 帧/530 点 formal gate；结果 PASS，但提升很小，暂作为候选保留，不自动升默认。
+Step 4b point_regime_localization_v1: 已完成代码、两帧 smoke、200 帧/530 点 formal gate；结果 FAIL，不升默认。
 Step 4 guarded_background_rescue: 未开始；Step 3 已明确失败，背景救援仍必须先约束 near-zero/no-claim/remote-support 触发区域。
 ```
 
@@ -40,6 +41,7 @@ reliability/no_claim 只做产品解释和后续 guard，不删除 official hold
 | Step 2 reliability | done smoke | 新增 4 个 NPZ 合同字段和 point eval 字段，不改变 official recon |
 | Step 3 guarded vertical | done, reject | all-holdout formal gate FAIL：weighted RMSE `14.853289`、P95 `28.681533`、12km+ `20.063442` 均劣化 |
 | Step 4a rep soft weight | done, candidate pass | `tp26_rep_soft_weight_v1` weighted RMSE `14.755381`，P95/P99/12km+/light/floor10 formal gate 全 PASS；提升很小，未升默认 |
+| Step 4b point-regime localization | done, reject | `tp26_point_regime_localization_v1` weighted RMSE `15.075496`，P95/P99、12km+、light wind、floor10 全 FAIL；不升默认 |
 
 ### 关键输出路径
 
@@ -75,6 +77,14 @@ Step 4a representation soft-weight formal:
 centralized_v1_output/stage4_representation_soft_weight_200_20260608/tp26_rep_soft_weight_v1_metrics/
 centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_formal_guardrail/
 centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_error_source/
+
+Step 4b point-regime localization smoke:
+centralized_v1_output/stage4_point_regime_localization_smoke_20260608/tp26_point_regime_localization_v1_metrics/
+
+Step 4b point-regime localization formal:
+centralized_v1_output/stage4_point_regime_localization_200_20260608/tp26_point_regime_localization_v1_metrics/
+centralized_v1_output/stage4_point_regime_localization_200_20260608/analysis/tp26_vs_point_regime_localization_v1_formal_guardrail/
+centralized_v1_output/stage4_point_regime_localization_200_20260608/analysis/tp26_vs_point_regime_localization_v1_error_source/
 
 200-frame validation frame list:
 centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/stage4_validation_frame_times.txt
@@ -571,6 +581,136 @@ Source priority remains:
 candidate improves aggregate RMSE very slightly, but some extreme high-speed tail points still worsen.
 因此 tp26_rep_soft_weight_v1 可以作为候选分支保留，但不要仅凭这 200 帧小幅 PASS 直接替换默认。
 下一步推荐扩大到 500-1000 帧或全量 5614 holdout-only validation，再决定是否升默认。
+```
+
+### 2026-06-08 tp26_point_regime_localization_v1 Formal Gate 实施记录
+
+本轮按 DART/Gaspari-Cohn localization 和 LETKF 局地同化思路，实现了 training-only
+per-voxel/per-regime localization candidate，但 200-frame formal gate 失败。
+
+代码改动：
+
+```text
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+```
+
+新增模式：
+
+```text
+--localization-policy point_regime_localization_v1
+```
+
+实现边界：
+
+```text
+point_regime_localization_enabled = True
+point_regime_localization_uses_holdout_truth = False
+support map source = training_current_and_context_observation_support_map
+official holdout points retained = 530
+motion_records / context_motion_records still not used as wind
+default branch remains tp26_thr11_preserve
+```
+
+实现要点：
+
+```text
+1. 在重构前，从已剔除 holdout 的 current/context wind observations 生成 3D support/regime map。
+2. support map 记录 nearest current distance、current/context count、local current/context role gap、
+   provisional vertical gap、altitude regime。
+3. 每个 observation 写入目标 patch 时，按 target voxel 的 regime 使用 elementwise xy/z sigma factor
+   和 target radius，而不是只用整帧 8:4 / 10:5 选择。
+4. nearest-current-distance 单独不再强收缩；它只阻止 stable sparse widening，避免重演 SRHA 的全场收缩失败。
+```
+
+两帧 smoke：
+
+```text
+centralized_v1_output/stage4_point_regime_localization_smoke_20260608/tp26_point_regime_localization_v1_metrics/
+```
+
+结果：
+
+| frame | weighted/vector RMSE | strict holdout | motion as wind | xy factor mean | z factor mean |
+| --- | ---: | --- | --- | ---: | ---: |
+| `20260205190000` | `86.000000` | True | False | `0.985487` | `0.961329` |
+| `20260206074200` | `3.167227` | True | False | `0.985995` | `0.963288` |
+
+200-frame formal candidate：
+
+```text
+centralized_v1_output/stage4_point_regime_localization_200_20260608/tp26_point_regime_localization_v1_metrics/
+```
+
+正式对比输出：
+
+```text
+centralized_v1_output/stage4_point_regime_localization_200_20260608/analysis/tp26_vs_point_regime_localization_v1_formal_guardrail/tp26_vs_point_regime_localization_v1.md
+centralized_v1_output/stage4_point_regime_localization_200_20260608/analysis/tp26_vs_point_regime_localization_v1_formal_guardrail/tp26_vs_point_regime_localization_v1_promotion_checklist.md
+centralized_v1_output/stage4_point_regime_localization_200_20260608/analysis/tp26_vs_point_regime_localization_v1_error_source/tp26_vs_point_regime_localization_v1.md
+```
+
+行数检查：
+
+```text
+stage4_localization_sensitivity.csv = 200 rows + header
+stage4_point_departures.csv = 530 rows + header
+```
+
+point-regime 诊断：
+
+| field | value |
+| --- | ---: |
+| xy sigma factor mean | `0.985704` |
+| z sigma factor mean | `0.963478` |
+| remote current fraction | `0.987020` |
+| role gap fraction | `0.010411` |
+| vertical gap fraction | `0.210132` |
+| stable sparse widen fraction | `0.001279` |
+
+Promotion checklist：
+
+| gate | baseline `tp26_thr11_preserve` | candidate `tp26_point_regime_localization_v1` | result |
+| --- | ---: | ---: | --- |
+| weighted RMSE | `14.769036` | `15.075496` | FAIL |
+| frame P95 | `27.986111` | `28.145400` | FAIL |
+| frame P99 | `58.783770` | `58.861576` | FAIL |
+| 12km+ vector RMSE | `19.917698` | `20.284326` | FAIL |
+| light wind RMSE | `5.195877` | `5.242838` | FAIL |
+| light wind MAE | `4.185283` | `4.192387` | FAIL |
+| floor10 relative MAE | `0.282804` | `0.288906` | FAIL |
+| light/moderate relative-tail new failure | `0` | `0` | PASS |
+
+Formal gate 结论：
+
+```text
+PROMOTION_OVERALL = FAIL
+weighted RMSE delta = +0.306460 m/s
+high-error >=30mps points = 22
+default remains tp26_thr11_preserve
+```
+
+失败原因：
+
+```text
+nearest-current-distance 在当前 500m/6min aircraft support 下过于稀疏：
+active support voxel 的 remote current fraction 平均为 0.987020。
+即使 remote-current 不再单独收缩，per-target z/xy 小幅改变仍会污染 9-12km、12km+、light wind 和 floor10 relative MAE。
+
+Top worsening examples include:
+20260210100600: +15.225217 m/s
+20260206091200: +15.040075 m/s
+20260205141200: +21.200768 m/s
+20260202133000: +18.015819 m/s
+```
+
+下一步结论：
+
+```text
+不要推广 point_regime_localization_v1。
+不要把 nearest-current-distance 单独作为核收缩主信号。
+如果继续 localization 方向，应只做 report-only/offline oracle analysis，先证明哪些 regime 可安全改变；
+否则优先继续 representation soft weight 的大样本验证或 cross-fit residual GP。
 ```
 
 200 帧结果根目录：
@@ -1287,17 +1427,19 @@ u_motion/v_motion = aircraft ground motion，不是 wind。
 
 当前 Step 1-3 已完成代码、smoke 和 Step 3 all-holdout formal gate；本轮又完成了
 `centralized_stage4_representation_error_report.py` 的 report-only calibration，并把
-`representation_error_soft_weighted / tp26_rep_soft_weight_v1` 跑完 200-frame formal gate，结果 PASS。
-新窗口不要重复从 Step 1 开始，建议按以下顺序：
+`representation_error_soft_weighted / tp26_rep_soft_weight_v1` 跑完 200-frame formal gate，结果 PASS；
+同时把 `point_regime_localization_v1 / tp26_point_regime_localization_v1` 跑完 200-frame formal gate，
+结果 FAIL。新窗口不要重复从 Step 1 开始，建议按以下顺序：
 
 ```text
 1. 先读 guarded_vertical_dynamic_v2 all-holdout formal checklist 和 error-source decomposition。
 2. 不推广 guarded_vertical_dynamic_v2；它已 FAIL：weighted/P95/12km+/light/floor10 均劣化。
 3. 先读 representation_error_report，确认 truth-free score/bucket calibration 和 no-claim 语义。
 4. 已有 tp26_rep_soft_weight_v1：200 帧 formal gate PASS，但 aggregate gain 只有 0.013655 m/s；先扩大到 500-1000 帧或全量 5614 holdout-only validation，再考虑升默认。
-5. 如果进入 tp26_local_residual_gp_v1，必须 cross-fit training residual，不能用 holdout residual。
-6. 如果继续垂直方向，只做更保守的 per-point/regime-aware guard，不要直接调大动态垂直范围。
-7. Step 4 guarded_background_rescue 只针对 near-zero/no-claim/remote-support，不允许污染 high-confidence aircraft-supported voxels。
+5. 不推广 tp26_point_regime_localization_v1；它已 FAIL：weighted/P95/P99/12km+/light/floor10 均劣化。
+6. 如果进入 tp26_local_residual_gp_v1，必须 cross-fit training residual，不能用 holdout residual。
+7. 如果继续 localization，先做 report-only/oracle regime audit，不要直接把 nearest-current-distance 写进重构核。
+8. Step 4 guarded_background_rescue 只针对 near-zero/no-claim/remote-support，不允许污染 high-confidence aircraft-supported voxels。
 ```
 
 200 帧 guarded vertical candidate 正式复现命令已写在本文顶部“新窗口第一动作”。核心参数必须保持：
