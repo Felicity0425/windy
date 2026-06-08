@@ -686,7 +686,7 @@ def _write_md(
         "",
         "Scope: strict aircraft holdout only. Departures are `reconstruction - withheld aircraft wind`.",
         "",
-        "## Is Adaptive v3 Better?",
+        "## Candidate vs Baseline",
         "",
     ]
     if len(stack_rows) >= 2:
@@ -694,10 +694,16 @@ def _write_md(
         cand = stack_rows[1]
         delta = float(cand["vector_rmse"]) - float(base["vector_rmse"])
         pct = 100.0 * delta / max(float(base["vector_rmse"]), 1e-12)
+        if delta < 0.0:
+            verdict = f"improves vector RMSE by {-delta:.6f} m/s ({-pct:.2f}%)"
+        elif delta > 0.0:
+            verdict = f"worsens vector RMSE by {delta:.6f} m/s ({pct:.2f}%)"
+        else:
+            verdict = "leaves vector RMSE unchanged"
         lines.append(
-            f"`{candidate_label}` improves vector RMSE from {float(base['vector_rmse']):.6f} to "
-            f"{float(cand['vector_rmse']):.6f} m/s ({delta:.6f} m/s, {pct:.2f}%). "
-            "This is a real but modest improvement; the extreme tail remains the main unresolved issue."
+            f"`{candidate_label}` {verdict}: {float(base['vector_rmse']):.6f} -> "
+            f"{float(cand['vector_rmse']):.6f} m/s. "
+            "The extreme tail remains the main unresolved issue."
         )
     lines.extend(
         [

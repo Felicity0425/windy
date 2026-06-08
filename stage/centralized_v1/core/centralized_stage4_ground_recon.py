@@ -61,11 +61,15 @@ from stage.centralized_v1.configs.centralized_v1_contract import (  # noqa: E402
     C4_DISPLAY_SOURCE,
     C4_DISPLAY_U,
     C4_DISPLAY_V,
+    C4_NO_CLAIM_MASK,
     C4_POINT_EVAL_JSON,
+    C4_RELIABILITY_CONF,
+    C4_RELIABILITY_DIAGNOSTICS_JSON,
     C4_RECON_CONF,
     C4_RECON_MASK,
     C4_RECON_U,
     C4_RECON_V,
+    C4_TAIL_RISK_SCORE,
 )
 
 STRICT_STAGE4_OUTPUT_DIR = Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_center_strict")
@@ -78,7 +82,8 @@ LOCALIZATION_POLICIES = {
     "diagnostic_adaptive_regime_v4",
     "support_role_height_aware",
 }
-VERTICAL_LOCALIZATION_POLICIES = {"fixed", "support_adaptive"}
+GUARDED_VERTICAL_LOCALIZATION_POLICIES = {"guarded_dynamic_v2", "guarded_vertical_dynamic_v2"}
+VERTICAL_LOCALIZATION_POLICIES = {"fixed", "support_adaptive", *GUARDED_VERTICAL_LOCALIZATION_POLICIES}
 CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted", "obs_error_weighted"}
 PHYSICS_CONSTRAINT_MODES = {"proxy", "pydda_3dvar_proxy"}
 ROLE_CONFLICT_MODES = {"off", "current_priority", "current_priority_adaptive"}
@@ -139,6 +144,16 @@ DEFAULT_QC_CALIBRATION = {
     "vertical_localization_dense_current_factor": 0.85,
     "vertical_localization_stale_context_factor": 0.70,
     "vertical_localization_sparse_weak_factor": 1.10,
+    "guarded_vertical_dynamic_min_reliability": 0.20,
+    "guarded_vertical_dynamic_max_tail_risk_score": 0.45,
+    "guarded_vertical_dynamic_near_zero_confidence": 0.05,
+    "guarded_vertical_dynamic_support_strength_min": 0.10,
+    "guarded_vertical_dynamic_local_support_strength": 0.35,
+    "guarded_vertical_dynamic_moderate_role_gap_mps": 20.0,
+    "guarded_vertical_dynamic_hard_role_gap_mps": 30.0,
+    "guarded_vertical_dynamic_high_altitude_m": 12000.0,
+    "guarded_vertical_dynamic_strong_speed_mps": 60.0,
+    "guarded_vertical_dynamic_light_moderate_speed_mps": 30.0,
     "obs_error_sigma_floor_mps": 1.0,
     "obs_error_sigma_default_mps": 8.0,
     "obs_error_reference_sigma_mps": 8.0,
@@ -596,6 +611,110 @@ def _localization_weights(
     raise ValueError(f"Unsupported localization kernel: {kernel}")
 
 
+def _is_guarded_vertical_policy(policy: str) -> bool:
+    return str(policy) in GUARDED_VERTICAL_LOCALIZATION_POLICIES
+
+
+def _context_field_value(context: dict[str, Any], key: str, z: int, y: int, x: int, default: float) -> float:
+    value = context.get(key)
+    if value is None:
+        return float(default)
+    arr = np.asarray(value)
+    if arr.ndim != 3 or not (0 <= z < arr.shape[0] and 0 <= y < arr.shape[1] and 0 <= x < arr.shape[2]):
+        return float(default)
+    out = _safe_float(arr[z, y, x], default)
+    return out if np.isfinite(out) else float(default)
+
+
+def _guarded_vertical_dynamic_status(
+    row: dict[str, Any],
+    *,
+    qc_calibration: dict[str, Any],
+    localization_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = localization_context or {}
+    z = _safe_int(row.get("z"), 0)
+    y = _safe_int(row.get("y"), 0)
+    x = _safe_int(row.get("x"), 0)
+    speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
+    altitude = _safe_float(row.get("alt_meters"), ALT_MIN + max(0, z) * DELTA_ALT)
+    source_role = str(row.get("source_role"))
+
+    has_seed_context = bool(context.get("guarded_vertical_dynamic_seed_source"))
+    reliability = _context_field_value(context, "guard_reliability_confidence_3d", z, y, x, 0.0)
+    tail_risk = _context_field_value(context, "guard_tail_risk_score_3d", z, y, x, 1.0)
+    no_claim = _context_field_value(context, "guard_no_claim_mask_3d", z, y, x, 1.0) >= 0.5
+    recon_conf = _context_field_value(context, "guard_recon_confidence_3d", z, y, x, reliability)
+    support_strength = _context_field_value(context, "guard_support_strength_3d", z, y, x, 0.0)
+    current_support = _context_field_value(context, "guard_current_support_strength_3d", z, y, x, 0.0)
+    role_gap = max(
+        _context_field_value(context, "guard_role_gap_mps_3d", z, y, x, 0.0),
+        _safe_float(context.get("adaptive_role_gap_mps"), 0.0),
+    )
+    strong_vertical_isolated = _context_field_value(context, "guard_strong_vertical_isolated_3d", z, y, x, 0.0) >= 0.5
+    rapid_vertical = _context_field_value(context, "guard_rapid_vertical_3d", z, y, x, 0.0) >= 0.5
+
+    min_reliability = _cal_float(qc_calibration, "guarded_vertical_dynamic_min_reliability", 0.20)
+    max_tail_risk = _cal_float(qc_calibration, "guarded_vertical_dynamic_max_tail_risk_score", 0.45)
+    near_zero_conf = _cal_float(qc_calibration, "guarded_vertical_dynamic_near_zero_confidence", 0.05)
+    support_min = _cal_float(qc_calibration, "guarded_vertical_dynamic_support_strength_min", 0.10)
+    local_support = _cal_float(qc_calibration, "guarded_vertical_dynamic_local_support_strength", 0.35)
+    moderate_role_gap = _cal_float(qc_calibration, "guarded_vertical_dynamic_moderate_role_gap_mps", 20.0)
+    hard_role_gap = _cal_float(qc_calibration, "guarded_vertical_dynamic_hard_role_gap_mps", 30.0)
+    high_altitude = _cal_float(qc_calibration, "guarded_vertical_dynamic_high_altitude_m", 12000.0)
+    strong_speed = _cal_float(qc_calibration, "guarded_vertical_dynamic_strong_speed_mps", 60.0)
+    light_moderate_speed = _cal_float(qc_calibration, "guarded_vertical_dynamic_light_moderate_speed_mps", 30.0)
+
+    reasons: list[str] = []
+    if not has_seed_context:
+        reasons.append("missing_guard_context")
+    if reliability < min_reliability:
+        reasons.append("low_reliability")
+    if tail_risk >= max_tail_risk:
+        reasons.append("high_tail_risk")
+    if no_claim:
+        reasons.append("no_claim")
+    if recon_conf < near_zero_conf:
+        reasons.append("near_zero_reconstruction_confidence")
+    if support_strength < support_min:
+        reasons.append("remote_support")
+    if role_gap >= hard_role_gap:
+        reasons.append("role_gap")
+    if altitude >= high_altitude and role_gap >= hard_role_gap:
+        reasons.append("12km_plus_role_gap")
+    if source_role == "context_wind" and speed >= strong_speed:
+        reasons.append("context_only_extreme")
+    if strong_vertical_isolated or rapid_vertical or (speed >= strong_speed and current_support <= 0.0 and support_strength < local_support):
+        reasons.append("strong_vertical_isolated")
+
+    light_moderate_protected = speed <= light_moderate_speed and (
+        tail_risk >= max_tail_risk
+        or reliability < min_reliability
+        or no_claim
+        or recon_conf < near_zero_conf
+        or role_gap >= moderate_role_gap
+        or support_strength < support_min
+    )
+    if light_moderate_protected:
+        reasons.append("light_moderate_protected")
+
+    deduped_reasons = list(dict.fromkeys(reasons))
+    return {
+        "guard_allowed": not deduped_reasons,
+        "guard_reasons": deduped_reasons,
+        "guard_fallback_12km_plus": "12km_plus_role_gap" in deduped_reasons,
+        "guard_fallback_role_gap": "role_gap" in deduped_reasons or "12km_plus_role_gap" in deduped_reasons,
+        "guard_fallback_remote_support": "remote_support" in deduped_reasons,
+        "guard_fallback_light_moderate_protected": "light_moderate_protected" in deduped_reasons,
+        "guard_fallback_low_reliability": "low_reliability" in deduped_reasons,
+        "guard_fallback_high_tail_risk": "high_tail_risk" in deduped_reasons,
+        "guard_fallback_no_claim": "no_claim" in deduped_reasons,
+        "guard_fallback_near_zero_confidence": "near_zero_reconstruction_confidence" in deduped_reasons,
+        "guard_fallback_context_extreme": "context_only_extreme" in deduped_reasons,
+        "guard_fallback_strong_vertical_isolated": "strong_vertical_isolated" in deduped_reasons,
+    }
+
+
 def _dynamic_vertical_localization(
     row: dict[str, Any],
     *,
@@ -604,7 +723,7 @@ def _dynamic_vertical_localization(
     policy: str,
     qc_calibration: dict[str, Any],
     localization_context: dict[str, Any] | None = None,
-) -> dict[str, float | int | str]:
+) -> dict[str, Any]:
     policy = str(policy)
     if policy not in VERTICAL_LOCALIZATION_POLICIES:
         raise ValueError(f"Unsupported vertical_localization_policy={policy}; choose {sorted(VERTICAL_LOCALIZATION_POLICIES)}")
@@ -616,6 +735,9 @@ def _dynamic_vertical_localization(
             "sigma_z": base_sigma_z,
             "sigma_factor": 1.0,
             "reason": "fixed",
+            "guard_active": False,
+            "guarded_fallback": False,
+            "dynamic_vertical_active": False,
         }
 
     speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
@@ -623,6 +745,26 @@ def _dynamic_vertical_localization(
     obs_count = _safe_float(row.get("obs_count"), 1.0)
     time_conf = _safe_float(row.get("time_conf"), 1.0)
     source_role = str(row.get("source_role"))
+    guard_status: dict[str, Any] | None = None
+    if _is_guarded_vertical_policy(policy):
+        guard_status = _guarded_vertical_dynamic_status(
+            row,
+            qc_calibration=qc_calibration,
+            localization_context=localization_context,
+        )
+        if not bool(guard_status["guard_allowed"]):
+            guard_reasons = "+".join(str(item) for item in guard_status.get("guard_reasons", [])) or "fallback"
+            return {
+                "radius_z": base_radius_z,
+                "sigma_z": base_sigma_z,
+                "sigma_factor": 1.0,
+                "reason": f"guard_fallback:{guard_reasons}",
+                "guard_active": False,
+                "guarded_fallback": True,
+                "dynamic_vertical_active": False,
+                **{key: value for key, value in guard_status.items() if str(key).startswith("guard_fallback_")},
+            }
+
     factor = 1.0
     reasons: list[str] = []
 
@@ -656,11 +798,17 @@ def _dynamic_vertical_localization(
     max_factor = _cal_float(qc_calibration, "vertical_localization_max_sigma_factor", 1.25)
     factor = float(np.clip(factor, min_factor, max_factor))
     radius_z = max(1, int(round(base_radius_z * factor))) if base_radius_z > 0 else 0
+    reason = "+".join(reasons) if reasons else "neutral"
+    if guard_status is not None:
+        reason = f"guard_active:{reason}"
     return {
         "radius_z": radius_z,
         "sigma_z": base_sigma_z * factor,
         "sigma_factor": factor,
-        "reason": "+".join(reasons) if reasons else "neutral",
+        "reason": reason,
+        "guard_active": bool(guard_status is not None),
+        "guarded_fallback": False,
+        "dynamic_vertical_active": bool(abs(factor - 1.0) > 1e-6),
     }
 
 
@@ -1144,6 +1292,21 @@ def _accumulate_localized(
         )
     vertical_sigma_factors: list[float] = []
     vertical_reason_counts: dict[str, int] = {}
+    guard_counts = {
+        "guard_active_count": 0,
+        "guarded_fallback_count": 0,
+        "dynamic_vertical_active_count": 0,
+        "guard_12km_plus_fallback_count": 0,
+        "guard_role_gap_fallback_count": 0,
+        "guard_remote_support_fallback_count": 0,
+        "guard_light_moderate_protected_count": 0,
+        "guard_low_reliability_fallback_count": 0,
+        "guard_high_tail_risk_fallback_count": 0,
+        "guard_no_claim_fallback_count": 0,
+        "guard_near_zero_confidence_fallback_count": 0,
+        "guard_context_extreme_fallback_count": 0,
+        "guard_strong_vertical_isolated_fallback_count": 0,
+    }
     horizontal_sigma_factors: list[float] = []
     horizontal_reason_counts: dict[str, int] = {}
     srha_gate_counts = {
@@ -1236,6 +1399,32 @@ def _accumulate_localized(
         reason = str(vertical_loc["reason"])
         vertical_sigma_factors.append(factor)
         vertical_reason_counts[reason] = vertical_reason_counts.get(reason, 0) + 1
+        if bool(vertical_loc.get("guard_active", False)):
+            guard_counts["guard_active_count"] += 1
+        if bool(vertical_loc.get("guarded_fallback", False)):
+            guard_counts["guarded_fallback_count"] += 1
+        if bool(vertical_loc.get("dynamic_vertical_active", False)):
+            guard_counts["dynamic_vertical_active_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_12km_plus", False)):
+            guard_counts["guard_12km_plus_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_role_gap", False)):
+            guard_counts["guard_role_gap_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_remote_support", False)):
+            guard_counts["guard_remote_support_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_light_moderate_protected", False)):
+            guard_counts["guard_light_moderate_protected_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_low_reliability", False)):
+            guard_counts["guard_low_reliability_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_high_tail_risk", False)):
+            guard_counts["guard_high_tail_risk_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_no_claim", False)):
+            guard_counts["guard_no_claim_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_near_zero_confidence", False)):
+            guard_counts["guard_near_zero_confidence_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_context_extreme", False)):
+            guard_counts["guard_context_extreme_fallback_count"] += 1
+        if bool(vertical_loc.get("guard_fallback_strong_vertical_isolated", False)):
+            guard_counts["guard_strong_vertical_isolated_fallback_count"] += 1
         z0 = max(0, z - row_radius_z)
         z1 = min(z_dim, z + row_radius_z + 1)
         y0 = max(0, y - row_radius_xy)
@@ -1354,6 +1543,7 @@ def _accumulate_localized(
                 }
             )
 
+    vertical_observation_count = max(1, len(vertical_sigma_factors))
     return {
         "acc_u": acc_u,
         "acc_v": acc_v,
@@ -1379,6 +1569,15 @@ def _accumulate_localized(
             "vertical_localization_reason_counts": json.dumps(vertical_reason_counts, ensure_ascii=False, sort_keys=True),
             "vertical_localization_base_radius_z": int(radius_z),
             "vertical_localization_base_sigma_z": float(sigma_z),
+            "vertical_localization_observation_count": int(len(vertical_sigma_factors)),
+            "guarded_vertical_dynamic_seed_source": str(localization_context.get("guarded_vertical_dynamic_seed_source", "")),
+            "guarded_vertical_dynamic_seed_truth_used": bool(
+                localization_context.get("guarded_vertical_dynamic_seed_truth_used", False)
+            ),
+            "guard_active_fraction": float(guard_counts["guard_active_count"] / vertical_observation_count),
+            "guarded_fallback_fraction": float(guard_counts["guarded_fallback_count"] / vertical_observation_count),
+            "dynamic_vertical_active_fraction": float(guard_counts["dynamic_vertical_active_count"] / vertical_observation_count),
+            **guard_counts,
         },
         "srha_horizontal_scalar_diagnostics": {
             "srha_localization_policy": localization_policy,
@@ -1398,6 +1597,263 @@ def _normalize_confidence(weight: np.ndarray) -> np.ndarray:
     scale = float(np.percentile(positive, 90))
     scale = max(scale, 1e-6)
     return np.clip(weight / scale, 0.0, 1.0).astype(np.float32)
+
+
+def _factor_from_distance(distance_vox: float) -> float:
+    if distance_vox <= 2.0:
+        return 1.0
+    if distance_vox <= 4.0:
+        return 0.5
+    return 0.15
+
+
+def _factor_from_role_gap(role_gap_mps: float) -> float:
+    if role_gap_mps < 20.0:
+        return 1.0
+    if role_gap_mps < 30.0:
+        return 0.5
+    return 0.15
+
+
+def _support_strength_field(acc: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    current_w = np.asarray(acc.get("acc_current_w"), dtype=np.float32)
+    context_w = np.asarray(acc.get("acc_context_w"), dtype=np.float32)
+    current_norm = np.clip(
+        current_w / np.float32(_positive_percentile_scale(current_w, percentile=90.0, default=1.0)),
+        0.0,
+        1.0,
+    ).astype(np.float32)
+    context_norm = np.clip(
+        context_w / np.float32(_positive_percentile_scale(context_w, percentile=90.0, default=1.0)),
+        0.0,
+        1.0,
+    ).astype(np.float32)
+    support_strength = np.maximum(current_norm, context_norm).astype(np.float32)
+    return current_norm, context_norm, support_strength
+
+
+def _stats_for_field(values: np.ndarray, mask: np.ndarray | None = None) -> dict[str, float | int | None]:
+    arr = np.asarray(values, dtype=np.float32)
+    if mask is not None:
+        arr = arr[np.asarray(mask, dtype=bool)]
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {"count": 0, "min": None, "p05": None, "mean": None, "p50": None, "p95": None, "max": None}
+    return {
+        "count": int(arr.size),
+        "min": float(np.min(arr)),
+        "p05": float(np.percentile(arr, 5.0)),
+        "mean": float(np.mean(arr)),
+        "p50": float(np.percentile(arr, 50.0)),
+        "p95": float(np.percentile(arr, 95.0)),
+        "max": float(np.max(arr)),
+    }
+
+
+def _compute_reliability_fields(recon: dict[str, np.ndarray], acc: dict[str, np.ndarray]) -> dict[str, Any]:
+    recon_conf = np.clip(np.asarray(recon["recon_conf"], dtype=np.float32), 0.0, 1.0)
+    recon_u = np.asarray(recon["recon_u"], dtype=np.float32)
+    recon_v = np.asarray(recon["recon_v"], dtype=np.float32)
+    recon_mask = np.asarray(recon["recon_mask"], dtype=bool)
+    current_w = np.asarray(acc.get("acc_current_w"), dtype=np.float32)
+    context_w = np.asarray(acc.get("acc_context_w"), dtype=np.float32)
+    _, context_norm, support_strength = _support_strength_field(acc)
+
+    distance_factor = np.where(
+        support_strength >= 0.35,
+        1.0,
+        np.where(support_strength >= 0.10, 0.5, 0.15),
+    ).astype(np.float32)
+    component_gap = np.asarray(acc.get("role_conflict_component_gap"), dtype=np.float32)
+    role_factor = np.where(component_gap < 20.0, 1.0, np.where(component_gap < 30.0, 0.5, 0.15)).astype(np.float32)
+
+    current_supported = current_w > 0.0
+    context_supported = context_w > 0.0
+    support_count_factor = np.where(current_supported | (context_norm >= 0.10), 1.0, 0.4).astype(np.float32)
+    context_only_factor = (context_supported & ~current_supported).astype(np.float32)
+
+    pred_speed = np.sqrt((recon_u**2 + recon_v**2).astype(np.float32)).astype(np.float32)
+    vertical_jump = _vertical_jump_field(recon_u, recon_v)
+    vertical_neighbor_mean, vertical_neighbor_max = _vertical_neighbor_speed_stats(recon_u, recon_v)
+    vertical_speed_gap = np.abs(pred_speed - vertical_neighbor_mean).astype(np.float32)
+    strong_isolated = (pred_speed >= STRONG_WIND_DIAGNOSTIC_THRESHOLD_MPS) & (
+        vertical_neighbor_max < np.float32(STRONG_WIND_DIAGNOSTIC_THRESHOLD_MPS * 0.70)
+    )
+    rapid_vertical = (vertical_jump >= RAPID_VERTICAL_JUMP_DIAGNOSTIC_THRESHOLD_MPS) | (
+        (pred_speed >= 30.0) & (np.maximum(vertical_speed_gap, vertical_jump) >= 10.0)
+    )
+    vertical_factor = np.where(strong_isolated | rapid_vertical, 0.25, np.where(vertical_jump >= 10.0, 0.5, 1.0)).astype(
+        np.float32
+    )
+
+    reliability = (recon_conf * distance_factor * role_factor * support_count_factor * vertical_factor).astype(np.float32)
+    reliability = np.where(recon_mask, np.clip(reliability, 0.0, 1.0), 0.0).astype(np.float32)
+
+    distance_risk = 1.0 - distance_factor
+    role_risk = 1.0 - role_factor
+    low_conf_risk = np.clip((0.2 - recon_conf) / 0.2, 0.0, 1.0).astype(np.float32)
+    support_risk = 1.0 - support_count_factor
+    vertical_risk = 1.0 - vertical_factor
+    tail_risk_score = (
+        0.20 * distance_risk
+        + 0.20 * role_risk
+        + 0.20 * low_conf_risk
+        + 0.15 * support_risk
+        + 0.15 * vertical_risk
+        + 0.10 * context_only_factor
+    ).astype(np.float32)
+    tail_risk_score = np.where(recon_mask, np.clip(tail_risk_score, 0.0, 1.0), 1.0).astype(np.float32)
+    no_claim_mask = (~recon_mask) | (recon_conf < 0.05) | (reliability < 0.05)
+
+    active = recon_mask
+    total = int(reliability.size)
+    diagnostics: dict[str, Any] = {
+        "reliability_version": "confidence_v2_report_only",
+        "reliability_changes_reconstruction": False,
+        "truth_used_for_3d_reliability": False,
+        "factor_formula": "recon_confidence * distance_factor_proxy * role_consistency_factor * support_count_factor * vertical_consistency_factor",
+        "distance_factor_proxy_source": "acc_current_w/acc_context_w support strength percentile bins, not holdout distance",
+        "output_reliability_confidence_stats_active": _stats_for_field(reliability, active),
+        "tail_risk_score_stats_active": _stats_for_field(tail_risk_score, active),
+        "distance_factor_stats_active": _stats_for_field(distance_factor, active),
+        "role_consistency_factor_stats_active": _stats_for_field(role_factor, active),
+        "support_count_factor_stats_active": _stats_for_field(support_count_factor, active),
+        "vertical_consistency_factor_stats_active": _stats_for_field(vertical_factor, active),
+        "no_claim_voxels": int(np.count_nonzero(no_claim_mask)),
+        "no_claim_fraction": float(np.count_nonzero(no_claim_mask) / max(1, total)),
+        "active_no_claim_voxels": int(np.count_nonzero(no_claim_mask & active)),
+        "active_no_claim_fraction": float(np.count_nonzero(no_claim_mask & active) / max(1, int(np.count_nonzero(active)))),
+        "low_reliability_active_voxels_lt_0p05": int(np.count_nonzero((reliability < 0.05) & active)),
+        "high_tail_risk_active_voxels_ge_0p45": int(np.count_nonzero((tail_risk_score >= 0.45) & active)),
+        "context_only_active_voxels": int(np.count_nonzero((context_only_factor > 0.0) & active)),
+        "rapid_vertical_active_voxels": int(np.count_nonzero(rapid_vertical & active)),
+        "strong_isolated_active_voxels": int(np.count_nonzero(strong_isolated & active)),
+    }
+    return {
+        "stage4_reliability_confidence": reliability,
+        "stage4_tail_risk_score": tail_risk_score,
+        "stage4_no_claim_mask": no_claim_mask.astype(np.float32),
+        "stage4_reliability_diagnostics": diagnostics,
+    }
+
+
+def _make_guarded_vertical_localization_context(
+    shape: tuple[int, int, int],
+    observations: list[dict[str, Any]],
+    *,
+    radius_xy: int,
+    radius_z: int,
+    sigma_xy: float,
+    sigma_z: float,
+    localization_kernel: str,
+    role_conflict_mode: str,
+    conflict_speed_threshold_mps: float,
+    conflict_context_factor: float,
+    localization_policy: str,
+    localization_context: dict[str, Any] | None,
+    qc_calibration: dict[str, Any] | None,
+) -> dict[str, Any]:
+    seed_context = dict(localization_context or {})
+    calibration = qc_calibration or DEFAULT_QC_CALIBRATION
+    seed_acc = _accumulate_localized(
+        shape,
+        observations,
+        radius_xy=radius_xy,
+        radius_z=radius_z,
+        sigma_xy=sigma_xy,
+        sigma_z=sigma_z,
+        localization_kernel=localization_kernel,
+        role_conflict_mode=role_conflict_mode,
+        conflict_speed_threshold_mps=conflict_speed_threshold_mps,
+        conflict_context_factor=conflict_context_factor,
+        vertical_localization_policy="fixed",
+        localization_policy=localization_policy,
+        localization_context=seed_context,
+        qc_calibration=calibration,
+    )
+    seed_recon = _finalize_effective_reconstruction(_make_reconstruction(seed_acc))
+    reliability_field = _compute_reliability_fields(seed_recon, seed_acc)
+    current_norm, context_norm, support_strength = _support_strength_field(seed_acc)
+    recon_u = np.asarray(seed_recon["recon_u"], dtype=np.float32)
+    recon_v = np.asarray(seed_recon["recon_v"], dtype=np.float32)
+    pred_speed = np.sqrt((recon_u**2 + recon_v**2).astype(np.float32)).astype(np.float32)
+    vertical_jump = _vertical_jump_field(recon_u, recon_v)
+    vertical_neighbor_mean, vertical_neighbor_max = _vertical_neighbor_speed_stats(recon_u, recon_v)
+    vertical_speed_gap = np.abs(pred_speed - vertical_neighbor_mean).astype(np.float32)
+    strong_speed = _cal_float(calibration, "guarded_vertical_dynamic_strong_speed_mps", 60.0)
+    strong_isolated = (pred_speed >= np.float32(strong_speed)) & (vertical_neighbor_max < np.float32(strong_speed * 0.70))
+    rapid_vertical = (vertical_jump >= RAPID_VERTICAL_JUMP_DIAGNOSTIC_THRESHOLD_MPS) | (
+        (pred_speed >= 30.0) & (np.maximum(vertical_speed_gap, vertical_jump) >= 10.0)
+    )
+
+    guarded_context = dict(localization_context or {})
+    guarded_context.update(
+        {
+            "guarded_vertical_dynamic_seed_source": "fixed_vertical_provisional",
+            "guarded_vertical_dynamic_seed_policy": "fixed",
+            "guarded_vertical_dynamic_seed_truth_used": False,
+            "guarded_vertical_dynamic_seed_reliability_version": "confidence_v2_report_only",
+            "guard_reliability_confidence_3d": reliability_field["stage4_reliability_confidence"],
+            "guard_tail_risk_score_3d": reliability_field["stage4_tail_risk_score"],
+            "guard_no_claim_mask_3d": reliability_field["stage4_no_claim_mask"],
+            "guard_recon_confidence_3d": np.asarray(seed_recon["recon_conf"], dtype=np.float32),
+            "guard_support_strength_3d": support_strength,
+            "guard_current_support_strength_3d": current_norm,
+            "guard_context_support_strength_3d": context_norm,
+            "guard_role_gap_mps_3d": np.asarray(seed_acc.get("role_conflict_component_gap"), dtype=np.float32),
+            "guard_strong_vertical_isolated_3d": strong_isolated.astype(np.float32),
+            "guard_rapid_vertical_3d": rapid_vertical.astype(np.float32),
+        }
+    )
+    return guarded_context
+
+
+def _point_reliability_diagnostics(row: dict[str, Any]) -> dict[str, Any]:
+    recon_conf = float(np.clip(_safe_float(row.get("recon_confidence"), 0.0), 0.0, 1.0))
+    nearest_distance = _safe_float(row.get("nearest_train_distance_vox"), 999999.0)
+    role_gap = _safe_float(row.get("nearest_role_gap_mps"), 0.0)
+    nearest_current_count = _safe_int(row.get("nearest_current_count"), 0)
+    nearest_context_count = _safe_int(row.get("nearest_context_count"), 0)
+    pred_speed = _safe_float(row.get("pred_speed"), 0.0)
+    vertical_gap = _safe_float(row.get("vertical_speed_gap_mps"), 0.0)
+    vertical_jump = _safe_float(row.get("recon_vertical_jump_mps"), 0.0)
+
+    distance_factor = _factor_from_distance(nearest_distance)
+    role_factor = _factor_from_role_gap(role_gap)
+    support_count_factor = 1.0 if nearest_current_count >= 1 or nearest_context_count >= 2 else 0.4
+    context_only = nearest_context_count > 0 and nearest_current_count == 0
+    vertical_risk = pred_speed >= 30.0 and max(vertical_gap, vertical_jump) >= 10.0
+    if vertical_risk or vertical_jump >= RAPID_VERTICAL_JUMP_DIAGNOSTIC_THRESHOLD_MPS:
+        vertical_factor = 0.25
+    elif vertical_jump >= 10.0:
+        vertical_factor = 0.5
+    else:
+        vertical_factor = 1.0
+    reliability = float(
+        np.clip(recon_conf * distance_factor * role_factor * support_count_factor * vertical_factor, 0.0, 1.0)
+    )
+
+    tail_risk_score = float(
+        np.clip(
+            0.20 * (1.0 - distance_factor)
+            + 0.20 * (1.0 - role_factor)
+            + 0.20 * np.clip((0.2 - recon_conf) / 0.2, 0.0, 1.0)
+            + 0.15 * (1.0 - support_count_factor)
+            + 0.15 * (1.0 - vertical_factor)
+            + 0.10 * (1.0 if context_only else 0.0),
+            0.0,
+            1.0,
+        )
+    )
+    return {
+        "tail_risk_score_at_point": tail_risk_score,
+        "reliability_confidence_at_point": reliability,
+        "no_claim_at_point": bool(recon_conf < 0.05 or reliability < 0.05),
+        "reliability_distance_factor_at_point": float(distance_factor),
+        "reliability_role_consistency_factor_at_point": float(role_factor),
+        "reliability_support_count_factor_at_point": float(support_count_factor),
+        "reliability_vertical_consistency_factor_at_point": float(vertical_factor),
+    }
 
 
 def _scalar_npz_text(value: Any) -> str:
@@ -2601,43 +3057,43 @@ def _point_eval_rows(
             role_conflict_at_point=bool(role_context["role_conflict_at_point"]),
             role_conflict_component_gap_at_point_mps=float(role_context["role_conflict_component_gap_at_point_mps"]),
         )
-        rows.append(
-            {
-                "z": z,
-                "y": y,
-                "x": x,
-                "lat": geo["lat"],
-                "lon": geo["lon"],
-                "alt_m": geo["alt_m"],
-                "gt_u": gt_u,
-                "gt_v": gt_v,
-                "gt_speed": gt_speed,
-                "pred_u": pred_u,
-                "pred_v": pred_v,
-                "pred_speed": pred_speed,
-                "u_error": u_error,
-                "v_error": v_error,
-                "abs_u_error": abs(u_error),
-                "abs_v_error": abs(v_error),
-                "vector_error": vector_error,
-                "error_to_truth_speed_ratio": float(vector_error / max(1e-6, gt_speed)),
-                "recon_confidence": float(recon_conf[z, y, x]),
-                "obs_count": _safe_int(row.get("obs_count"), 0),
-                "obs_conf": _safe_float(row.get("obs_conf"), 1.0),
-                "nearest_role_gap_mps": nearest_role_gap_mps,
-                "nearest_current_count": nearest_current_count,
-                "nearest_context_count": nearest_context_count,
-                "recon_vertical_jump_mps": recon_vertical_jump,
-                "vertical_speed_gap_mps": vertical_speed_gap,
-                "vertical_neighbor_max_speed_mps": vertical_neighbor_max_speed,
-                **neighborhood_stats,
-                **role_context,
-                "qc_review_flag": qc_review_flag,
-                "qc_review_reasons": qc_review_reasons,
-                **{k: v for k, v in nearest.items() if k != "nearest_observations"},
-                "nearest_observations_json": json.dumps(nearest_rows, ensure_ascii=False),
-            }
-        )
+        out_row = {
+            "z": z,
+            "y": y,
+            "x": x,
+            "lat": geo["lat"],
+            "lon": geo["lon"],
+            "alt_m": geo["alt_m"],
+            "gt_u": gt_u,
+            "gt_v": gt_v,
+            "gt_speed": gt_speed,
+            "pred_u": pred_u,
+            "pred_v": pred_v,
+            "pred_speed": pred_speed,
+            "u_error": u_error,
+            "v_error": v_error,
+            "abs_u_error": abs(u_error),
+            "abs_v_error": abs(v_error),
+            "vector_error": vector_error,
+            "error_to_truth_speed_ratio": float(vector_error / max(1e-6, gt_speed)),
+            "recon_confidence": float(recon_conf[z, y, x]),
+            "obs_count": _safe_int(row.get("obs_count"), 0),
+            "obs_conf": _safe_float(row.get("obs_conf"), 1.0),
+            "nearest_role_gap_mps": nearest_role_gap_mps,
+            "nearest_current_count": nearest_current_count,
+            "nearest_context_count": nearest_context_count,
+            "recon_vertical_jump_mps": recon_vertical_jump,
+            "vertical_speed_gap_mps": vertical_speed_gap,
+            "vertical_neighbor_max_speed_mps": vertical_neighbor_max_speed,
+            **neighborhood_stats,
+            **role_context,
+            "qc_review_flag": qc_review_flag,
+            "qc_review_reasons": qc_review_reasons,
+            **{k: v for k, v in nearest.items() if k != "nearest_observations"},
+            "nearest_observations_json": json.dumps(nearest_rows, ensure_ascii=False),
+        }
+        out_row.update(_point_reliability_diagnostics(out_row))
+        rows.append(out_row)
     return rows
 
 
@@ -2687,6 +3143,13 @@ def _write_point_eval_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "vector_error",
         "error_to_truth_speed_ratio",
         "recon_confidence",
+        "tail_risk_score_at_point",
+        "reliability_confidence_at_point",
+        "no_claim_at_point",
+        "reliability_distance_factor_at_point",
+        "reliability_role_consistency_factor_at_point",
+        "reliability_support_count_factor_at_point",
+        "reliability_vertical_consistency_factor_at_point",
         "obs_count",
         "obs_conf",
         "nearest_role_gap_mps",
@@ -2755,8 +3218,10 @@ def _write_method_md(
     confidence_diagnostics: dict[str, Any],
     field_diagnostics: dict[str, Any],
     role_conflict_diagnostics: dict[str, Any],
+    vertical_localization_diagnostics: dict[str, Any],
     cma_diagnostics: dict[str, Any],
     display_fill_diagnostics: dict[str, Any],
+    reliability_diagnostics: dict[str, Any],
     leakage_report: dict[str, Any],
     pressure_test_note: str,
 ) -> None:
@@ -2839,6 +3304,32 @@ def _write_method_md(
     for key in display_param_keys:
         lines.append(f"| `{key}` | `{json.dumps(params.get(key), ensure_ascii=False)}` |")
     for key, value in display_fill_diagnostics.items():
+        lines.append(f"| `{key}` | `{json.dumps(value, ensure_ascii=False)}` |")
+    lines.extend(
+        [
+            "",
+            "## Reliability Confidence Diagnostics",
+            "",
+            "`stage4_reliability_confidence_3d`, `stage4_tail_risk_score_3d` and `stage4_no_claim_mask_3d` are report/product reliability fields. They do not change official `recon_u/v/conf/mask` or strict aircraft holdout RMSE/MAE.",
+            "",
+            "| item | value |",
+            "| --- | --- |",
+        ]
+    )
+    for key, value in reliability_diagnostics.items():
+        lines.append(f"| `{key}` | `{json.dumps(value, ensure_ascii=False)}` |")
+    lines.extend(
+        [
+            "",
+            "## Vertical Localization Diagnostics",
+            "",
+            "Guarded vertical dynamic mode uses a fixed-vertical provisional pass to build truth-free reliability/tail-risk proxy fields, then enables dynamic vertical localization only where the guard allows it.",
+            "",
+            "| item | value |",
+            "| --- | --- |",
+        ]
+    )
+    for key, value in vertical_localization_diagnostics.items():
         lines.append(f"| `{key}` | `{json.dumps(value, ensure_ascii=False)}` |")
     lines.extend(
         [
@@ -3061,6 +3552,23 @@ def process_frame(
         localization_sigma_xy = float(selected_loc["localization_sigma_xy"])
         localization_radius_z = int(selected_loc["localization_radius_z"])
         localization_sigma_z = float(selected_loc["localization_sigma_z"])
+    localization_context_for_acc = adaptive_diagnostics
+    if _is_guarded_vertical_policy(vertical_localization_policy):
+        localization_context_for_acc = _make_guarded_vertical_localization_context(
+            shape,
+            observations,
+            radius_xy=localization_radius_xy,
+            radius_z=localization_radius_z,
+            sigma_xy=localization_sigma_xy,
+            sigma_z=localization_sigma_z,
+            localization_kernel=localization_kernel,
+            role_conflict_mode=role_conflict_mode,
+            conflict_speed_threshold_mps=conflict_speed_threshold_mps,
+            conflict_context_factor=conflict_context_factor,
+            localization_policy=localization_policy,
+            localization_context=adaptive_diagnostics,
+            qc_calibration=qc_calibration,
+        )
     acc = _accumulate_localized(
         shape,
         observations,
@@ -3074,7 +3582,7 @@ def process_frame(
         conflict_context_factor=conflict_context_factor,
         vertical_localization_policy=vertical_localization_policy,
         localization_policy=localization_policy,
-        localization_context=adaptive_diagnostics,
+        localization_context=localization_context_for_acc,
         qc_calibration=qc_calibration,
     )
     vertical_localization_diagnostics = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
@@ -3134,6 +3642,8 @@ def process_frame(
         vertical_context_mismatch_damping=vertical_context_mismatch_damping,
     )
     recon = _finalize_effective_reconstruction(recon)
+    reliability_field = _compute_reliability_fields(recon, acc)
+    reliability_diagnostics = dict(reliability_field["stage4_reliability_diagnostics"])
     point_rows = _point_eval_rows(holdout_wind, recon["recon_u"], recon["recon_v"], recon["recon_conf"], observations, acc)
     display_field, display_fill_diagnostics = _make_display_filled_field(
         recon,
@@ -3243,6 +3753,8 @@ def process_frame(
         "display_fill_confidence_cap": float(display_fill_confidence_cap),
         "display_fill_qc_gating": str(display_fill_qc_gating),
         "display_fill_is_official_accuracy": False,
+        "reliability_confidence_is_official_accuracy": False,
+        "reliability_confidence_changes_reconstruction": False,
         "qc_calibration_path": str(qc_calibration.get("calibration_path", "")),
         "stage3_agent_path": stage3_row.get("agent_path", ""),
     }
@@ -3264,6 +3776,7 @@ def process_frame(
         "vertical_localization_diagnostics": vertical_localization_diagnostics,
         "cma_fusion_diagnostics": cma_fusion_diagnostics,
         "display_fill_diagnostics": display_fill_diagnostics,
+        "reliability_diagnostics": reliability_diagnostics,
         "refine_metrics": refine_metrics,
         "pressure_test_note": pressure_test_note,
     }
@@ -3282,6 +3795,9 @@ def process_frame(
             C4_DISPLAY_CONF: display_field["display_conf"],
             C4_DISPLAY_MASK: display_field["display_mask"],
             C4_DISPLAY_SOURCE: display_field["display_source"],
+            C4_RELIABILITY_CONF: reliability_field["stage4_reliability_confidence"],
+            C4_TAIL_RISK_SCORE: reliability_field["stage4_tail_risk_score"],
+            C4_NO_CLAIM_MASK: reliability_field["stage4_no_claim_mask"],
             C4_C_TIME_3D: recon["c_time"],
             C4_C_SPACE_3D: recon["c_space"],
             C4_C_JOINT_3D: recon["c_joint"],
@@ -3300,6 +3816,7 @@ def process_frame(
             "stage4_vertical_localization_diagnostics_json": np.array(json.dumps(vertical_localization_diagnostics, ensure_ascii=False)),
             "stage4_cma_fusion_diagnostics_json": np.array(json.dumps(cma_fusion_diagnostics, ensure_ascii=False)),
             C4_DISPLAY_FILL_DIAGNOSTICS_JSON: np.array(json.dumps(display_fill_diagnostics, ensure_ascii=False)),
+            C4_RELIABILITY_DIAGNOSTICS_JSON: np.array(json.dumps(reliability_diagnostics, ensure_ascii=False)),
             "stage4_leakage_report_json": np.array(json.dumps(leakage_report, ensure_ascii=False)),
             "holdout_records_json": np.array(json.dumps(holdout_wind, ensure_ascii=False)),
         },
@@ -3324,8 +3841,10 @@ def process_frame(
         confidence_diagnostics=confidence_diagnostics,
         field_diagnostics=field_diagnostics,
         role_conflict_diagnostics=role_conflict_diagnostics,
+        vertical_localization_diagnostics=vertical_localization_diagnostics,
         cma_diagnostics=cma_fusion_diagnostics,
         display_fill_diagnostics=display_fill_diagnostics,
+        reliability_diagnostics=reliability_diagnostics,
         leakage_report=leakage_report,
         pressure_test_note=pressure_test_note,
     )
@@ -3355,6 +3874,15 @@ def process_frame(
         "display_fill_active_voxels": int(display_fill_diagnostics.get("display_active_voxels", 0)),
         "display_fill_background_voxels": int(display_fill_diagnostics.get("display_background_voxels", 0)),
         "display_fill_diagnostics": display_fill_diagnostics,
+        "reliability_confidence_mean_active": (
+            reliability_diagnostics.get("output_reliability_confidence_stats_active", {}) or {}
+        ).get("mean"),
+        "tail_risk_score_mean_active": (reliability_diagnostics.get("tail_risk_score_stats_active", {}) or {}).get("mean"),
+        "no_claim_voxels": int(reliability_diagnostics.get("no_claim_voxels", 0)),
+        "no_claim_fraction": float(reliability_diagnostics.get("no_claim_fraction", 0.0)),
+        "active_no_claim_voxels": int(reliability_diagnostics.get("active_no_claim_voxels", 0)),
+        "active_no_claim_fraction": float(reliability_diagnostics.get("active_no_claim_fraction", 0.0)),
+        "reliability_diagnostics": reliability_diagnostics,
         "confidence_mode": str(confidence_mode),
         "localization_kernel": str(localization_kernel),
         "localization_policy": str(localization_policy),

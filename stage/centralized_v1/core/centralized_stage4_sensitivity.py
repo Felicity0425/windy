@@ -54,6 +54,8 @@ from stage.centralized_v1.core.centralized_stage4_ground_recon import (
     _load_qc_calibration,
     _load_stage2_npz,
     _make_reconstruction,
+    _is_guarded_vertical_policy,
+    _make_guarded_vertical_localization_context,
     _metric_summary,
     _parse_frame_times,
     _pinn_diffusion_refine,
@@ -319,6 +321,23 @@ def _evaluate_metrics_only(
         localization_sigma_xy = float(selected_loc["localization_sigma_xy"])
         localization_radius_z = int(selected_loc["localization_radius_z"])
         localization_sigma_z = float(selected_loc["localization_sigma_z"])
+    localization_context_for_acc = adaptive_diagnostics
+    if _is_guarded_vertical_policy(vertical_localization_policy):
+        localization_context_for_acc = _make_guarded_vertical_localization_context(
+            shape,
+            observations,
+            radius_xy=localization_radius_xy,
+            radius_z=localization_radius_z,
+            sigma_xy=localization_sigma_xy,
+            sigma_z=localization_sigma_z,
+            localization_kernel=localization_kernel,
+            role_conflict_mode=role_conflict_mode,
+            conflict_speed_threshold_mps=conflict_speed_threshold_mps,
+            conflict_context_factor=conflict_context_factor,
+            localization_policy=localization_policy,
+            localization_context=adaptive_diagnostics,
+            qc_calibration=qc_calibration or DEFAULT_QC_CALIBRATION,
+        )
     acc = _accumulate_localized(
         shape,
         observations,
@@ -332,7 +351,7 @@ def _evaluate_metrics_only(
         conflict_context_factor=conflict_context_factor,
         vertical_localization_policy=vertical_localization_policy,
         localization_policy=localization_policy,
-        localization_context=adaptive_diagnostics,
+        localization_context=localization_context_for_acc,
         qc_calibration=qc_calibration or DEFAULT_QC_CALIBRATION,
     )
     vertical_localization_diag = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
@@ -478,6 +497,26 @@ def _evaluate_metrics_only(
             vertical_localization_diag.get("vertical_localization_sigma_factor_stats", {}) or {}
         ).get("max"),
         "vertical_localization_reason_counts": str(vertical_localization_diag.get("vertical_localization_reason_counts", "")),
+        "guarded_vertical_dynamic_seed_source": str(vertical_localization_diag.get("guarded_vertical_dynamic_seed_source", "")),
+        "guarded_vertical_dynamic_seed_truth_used": bool(vertical_localization_diag.get("guarded_vertical_dynamic_seed_truth_used", False)),
+        "guard_active_fraction": float(vertical_localization_diag.get("guard_active_fraction", 0.0)),
+        "guarded_fallback_fraction": float(vertical_localization_diag.get("guarded_fallback_fraction", 0.0)),
+        "dynamic_vertical_active_fraction": float(vertical_localization_diag.get("dynamic_vertical_active_fraction", 0.0)),
+        "guard_active_count": int(vertical_localization_diag.get("guard_active_count", 0)),
+        "guarded_fallback_count": int(vertical_localization_diag.get("guarded_fallback_count", 0)),
+        "dynamic_vertical_active_count": int(vertical_localization_diag.get("dynamic_vertical_active_count", 0)),
+        "guard_12km_plus_fallback_count": int(vertical_localization_diag.get("guard_12km_plus_fallback_count", 0)),
+        "guard_role_gap_fallback_count": int(vertical_localization_diag.get("guard_role_gap_fallback_count", 0)),
+        "guard_remote_support_fallback_count": int(vertical_localization_diag.get("guard_remote_support_fallback_count", 0)),
+        "guard_light_moderate_protected_count": int(vertical_localization_diag.get("guard_light_moderate_protected_count", 0)),
+        "guard_low_reliability_fallback_count": int(vertical_localization_diag.get("guard_low_reliability_fallback_count", 0)),
+        "guard_high_tail_risk_fallback_count": int(vertical_localization_diag.get("guard_high_tail_risk_fallback_count", 0)),
+        "guard_no_claim_fallback_count": int(vertical_localization_diag.get("guard_no_claim_fallback_count", 0)),
+        "guard_near_zero_confidence_fallback_count": int(vertical_localization_diag.get("guard_near_zero_confidence_fallback_count", 0)),
+        "guard_context_extreme_fallback_count": int(vertical_localization_diag.get("guard_context_extreme_fallback_count", 0)),
+        "guard_strong_vertical_isolated_fallback_count": int(
+            vertical_localization_diag.get("guard_strong_vertical_isolated_fallback_count", 0)
+        ),
         "srha_horizontal_sigma_factor_mean": (
             srha_horizontal_diag.get("srha_horizontal_sigma_factor_stats", {}) or {}
         ).get("mean"),
@@ -735,6 +774,13 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "mean_vertical_oversmoothing_candidate_voxels": _mean_numeric(group_rows, "vertical_oversmoothing_candidate_voxels"),
                 "mean_strong_vertical_isolated_voxels": _mean_numeric(group_rows, "strong_vertical_isolated_voxels"),
                 "mean_vertical_localization_sigma_factor": _mean_numeric(group_rows, "vertical_localization_sigma_factor_mean"),
+                "mean_guard_active_fraction": _mean_numeric(group_rows, "guard_active_fraction"),
+                "mean_guarded_fallback_fraction": _mean_numeric(group_rows, "guarded_fallback_fraction"),
+                "mean_dynamic_vertical_active_fraction": _mean_numeric(group_rows, "dynamic_vertical_active_fraction"),
+                "sum_guard_12km_plus_fallback_count": _sum_numeric(group_rows, "guard_12km_plus_fallback_count"),
+                "sum_guard_role_gap_fallback_count": _sum_numeric(group_rows, "guard_role_gap_fallback_count"),
+                "sum_guard_remote_support_fallback_count": _sum_numeric(group_rows, "guard_remote_support_fallback_count"),
+                "sum_guard_light_moderate_protected_count": _sum_numeric(group_rows, "guard_light_moderate_protected_count"),
                 "mean_vertical_risk_candidate_voxels_last": _mean_numeric(group_rows, "vertical_risk_candidate_voxels_last"),
                 "mean_vertical_oversmooth_preserve_voxels_last": _mean_numeric(group_rows, "vertical_oversmooth_preserve_voxels_last"),
                 "mean_vertical_context_mismatch_damped_voxels_last": _mean_numeric(group_rows, "vertical_context_mismatch_damped_voxels_last"),
@@ -791,6 +837,25 @@ def _write_aggregate_md(path: Path, rows: list[dict[str, Any]]) -> None:
             f"{row.get('mean_vertical_risk_candidate_voxels_last', 0.0):.1f} | "
             f"{row.get('mean_vertical_oversmooth_preserve_voxels_last', 0.0):.1f} | "
             f"{row.get('mean_vertical_context_mismatch_damped_voxels_last', 0.0):.1f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Guarded Vertical Dynamic Diagnostics",
+            "",
+            "| rank | guard active frac | guarded fallback frac | dynamic active frac | 12km+ fallback | role-gap fallback | remote fallback | light/mod protected |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for idx, row in enumerate(rows, start=1):
+        lines.append(
+            f"| {idx} | {(_to_float(row.get('mean_guard_active_fraction')) or 0.0):.6f} | "
+            f"{(_to_float(row.get('mean_guarded_fallback_fraction')) or 0.0):.6f} | "
+            f"{(_to_float(row.get('mean_dynamic_vertical_active_fraction')) or 0.0):.6f} | "
+            f"{(_to_float(row.get('sum_guard_12km_plus_fallback_count')) or 0.0):.0f} | "
+            f"{(_to_float(row.get('sum_guard_role_gap_fallback_count')) or 0.0):.0f} | "
+            f"{(_to_float(row.get('sum_guard_remote_support_fallback_count')) or 0.0):.0f} | "
+            f"{(_to_float(row.get('sum_guard_light_moderate_protected_count')) or 0.0):.0f} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
