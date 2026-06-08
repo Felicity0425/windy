@@ -258,6 +258,75 @@ CMA/GFS/ERA = weak background / prior only, never truth
 display-filled = visualization/product footprint only, not official accuracy
 ```
 
+## SOTA 文献与 tp26 后续优化方向（2026-06-08）
+
+结论先写清楚：`tp26_thr11_preserve` 仍有提升空间，但提升点不在“全场叠加更多背景场”或“全场动态垂直分层”。200 帧 formal gate 已证明，`guarded_vertical_dynamic_v2` 和 sparse-temporal CMA 都会轻微污染 weighted RMSE、12km+、light wind 或 floor10 relative MAE。下一轮应沿着 SOTA 文献中更稳的方向做：观测 QC、代表性误差、robust assimilation、局地残差不确定性、弱背景 no-claim rescue。
+
+### 已查文献和对本项目的约束
+
+| 文献 / 系统 | 关键点 | 对 tp26 的直接含义 |
+| --- | --- | --- |
+| de Haan et al. 2025, EMADDC, AMT, `https://doi.org/10.5194/amt-18-3341-2025` | Mode-S EHS 风来自 aircraft ground vector 和 air vector 的差；系统有 pre-processing、processing、post-processing 和 aircraft safe-list/QC。 | 继续坚持 `motion_records` 不是 wind；下一步可做 aircraft/flight/phase-level QC 和 safe-list 风险分数，但不能把 QC flag 从 official holdout 中删掉。 |
+| de Haan 2016, Mode-S EHS triple collocation, AMT, `https://doi.org/10.5194/amt-9-4141-2016` | aircraft-derived wind measurement error 量级约 `1.1-1.4 m/s`，远低于当前 tp26 weighted RMSE `14.769 m/s`。 | 当前大误差不是仪器噪声主导，而是 sparse support、role conflict、vertical/representation error 主导；不要用观测误差 sigma 从 RMSE 里扣分。 |
+| Janjic et al. 2018, representation error, QJRMS, `https://doi.org/10.1002/qj.3130` | observation error 包含 measurement error 和 representation error；点观测、网格分析、时间窗口和观测算子尺度不一致会产生代表性误差。 | tp26 的 high tail 应建模为 regime-dependent representation error，而不是简单增大/减小全局 localization。 |
+| Marinescu et al. 2022, aircraft wind GPR, PLoS ONE, `https://doi.org/10.1371/journal.pone.0276185` | 用 ADS-B/Mode-S aircraft-derived wind 做时空 GPR，可输出估计不确定性，且不依赖固定网格；按 flight split 时误差更难。 | 可尝试 training-only 局地 residual GP / kriging 作为小幅修正和 uncertainty source，但必须 cross-fit，不能用 holdout residual。 |
+| Staffetti/Olivares 系列 PCE-GPR 2023, Mathematics, `https://doi.org/10.3390/math11041018` | PCE-GPR 用 polynomial chaos 扩展平均时空结构，提升 GPR 的 wind field reconstruction/short-term prediction。 | 比全场 CMA 更适合做 aircraft-only residual model；但应只在高支撑、低 posterior variance 区域启用，其他区域保持 shrink-to-zero。 |
+| DART localization 文档与 Gaspari-Cohn 1999, `https://docs.dart.ucar.edu/en/latest/assimilation_code/modules/assimilation/cov_cutoff_mod.html` | 主流 DA 使用 compact localization；DART 文档也提醒 cutoff 调得过细可能有害，垂直 localization 常保持较大以免破坏垂直结构。 | Step 3 的失败和这个经验一致：垂直动态调节不能全局细调。下一版只允许 regime-aware、小幅、可回退的 localization 改动。 |
+| PyDDA 3DVAR wind retrieval, `https://openradarscience.org/PyDDA/user_guide/retrieving_winds.html` | 3DVAR wind retrieval 通常组合观测、smoothness、mass continuity、model constraints。 | 目前 `pydda_3dvar_proxy` 应继续作为弱物理约束和诊断，不应变成强背景真值；下一步可把 smoothness/continuity penalty 做成 tail-aware。 |
+| Hunt et al. 2007 LETKF, `https://doi.org/10.1016/j.physd.2006.11.008` | 局地集合 Kalman 思路用局地 ensemble 表达 flow-dependent uncertainty。 | 中期可以做 lightweight ensemble：对 tp26 半径、时间权重、context boost 做小集合，输出 ensemble spread 作为 reliability/guard，而不是立即重写为 LETKF。 |
+| GraphCast 2023, Science, `https://doi.org/10.1126/science.adi2336`; GenCast 2024, Nature, `https://doi.org/10.1038/s41586-024-08252-9`; NeuralGCM 2024, Nature, `https://doi.org/10.1038/s41586-024-07744-y`; DiffDA 2024, ICML, `https://proceedings.mlr.press/v235/huang24h.html` | ML weather/生成式 DA 已经能提供强背景、ensemble 和不确定性，但它们的验证口径是全球/再分析/预报场，不是本项目 strict current aircraft holdout。 | 可以作为 weak background prior、uncertainty prior 或 no-claim rescue source；不能当 truth，也不能直接覆盖高置信 aircraft 支撑区。 |
+
+### 优先优化路线
+
+1. `tp26_rep_error_v1_report_only`：先不改 recon，基于现有 `stage4_point_departures.csv` 做 cross-fit representation-error model。目标是预测 `sigma_rep` / tail probability，特征只用 truth-free 支撑、距离、role gap、altitude、vertical proxy、light/strong wind regime；输出 bucket calibration、coverage、SSE share，不改变 official RMSE。
+
+2. `tp26_robust_weight_v1`：把 representation error 转成输入权重的 robust 版本。建议优先试 Huber/Student-t 风格的 soft downweight，不做 hard delete。高风险 observation 只降低 influence，strict holdout 点仍全部评估。
+
+3. `tp26_local_residual_gp_v1`：用 training aircraft residual 做局地零均值修正，类似 conservative GPR/kriging。只允许在 `current_support>=1`、`role_gap<20mps`、`nearest_distance<=4vox`、posterior variance 低的 bucket 中启用；其他区域 correction shrink 到 0。这个方向比全场 CMA 更符合 aircraft-only truth 约束。
+
+4. `tp26_flow_localization_v1`：不要恢复全场 dynamic vertical。改为 flow/support-aware localization：水平半径可随 support density 和 role consistency 变，垂直半径默认保守；只有 `low_tail_risk && high_reliability` 才允许小幅调整。
+
+5. `tp26_probabilistic_reliability_v1`：把 Stage4 从单一 RMSE 扩展到 calibration。新增 coverage/ECE/CRPS-like diagnostics，检查 `reliability_confidence_3d` 是否真的对应 error quantile。它不改变官方准确率，但能稳定 no-claim/product 语义。
+
+6. `tp26_guarded_background_rescue_v1`：Step 4 仍可做，但只救 `near-zero / no-claim / remote-support` 区域。背景场只做 capped weak prior，不能进入高置信 aircraft 支撑区域；promotion gate 必须继续看 weighted RMSE、P95/P99、12km+、light wind、floor10 relative MAE。
+
+### 下一窗口建议第一步
+
+不要直接改默认方法。建议新窗口先做一个 report-only 脚本：
+
+```text
+stage/centralized_v1/core/centralized_stage4_representation_error_report.py
+```
+
+输入：
+
+```text
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/stage4_point_departures.csv
+```
+
+输出：
+
+```text
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/
+  representation_error_feature_summary.csv
+  representation_error_bucket_calibration.csv
+  representation_error_rule_candidates.csv
+  representation_error_report.md
+```
+
+最小通过标准：
+
+```text
+strict_holdout_no_leakage == True
+motion_used_as_wind == False
+report_only_no_recon_change == True
+top risk bucket captures most >=30mps tail SSE
+low risk bucket RMSE clearly below 14.769036
+reliability/no-claim does not remove official holdout points
+```
+
+只有 report-only 证明 `sigma_rep/tail probability` 可校准后，再进入 `tp26_robust_weight_v1` 或 `tp26_local_residual_gp_v1` 的 200-frame formal gate。
+
 200 帧结果根目录：
 
 ```text
