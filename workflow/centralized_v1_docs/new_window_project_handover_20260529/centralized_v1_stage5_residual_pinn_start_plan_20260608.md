@@ -975,3 +975,240 @@ report_v1 未通过，不进入 field_v1。
 smoke 未通过，不跑 200-frame formal gate。
 formal gate 未通过，不升默认。
 ```
+
+## 17. 2026-06-08 report_v1 实施记录
+
+本轮已把 Stage5 Residual PINN 的第一阶段从方案落到可执行脚本和 point-level report 实验。重要边界保持不变：
+
+```text
+Stage5 PINN 是 tp26 后处理残差层，不替换 tp26_thr11_preserve。
+候选形式仍是 F_stage5 = F_tp26 + gate * clipped_delta。
+report_v1 只在 point-level departures 上验证统计收益，不写回 3D field。
+official truth 仍只来自 current aircraft wind_records strict holdout。
+```
+
+### 17.1 新增代码
+
+新增文件：
+
+```text
+stage/centralized_v1/core/centralized_stage5_residual_pinn_dataset.py
+stage/centralized_v1/core/centralized_stage5_residual_pinn_train.py
+stage/centralized_v1/core/centralized_stage5_residual_pinn_apply.py
+stage/centralized_v1/core/centralized_stage5_residual_pinn_compare.py
+```
+
+静态检查：
+
+```text
+python -m py_compile:
+  centralized_stage5_residual_pinn_dataset.py
+  centralized_stage5_residual_pinn_train.py
+  centralized_stage5_residual_pinn_apply.py
+  centralized_stage5_residual_pinn_compare.py
+
+结果：通过
+```
+
+`centralized_stage5_residual_pinn_train.py` 已支持：
+
+```text
+--device auto|cpu|cuda
+--allow-tf32
+```
+
+本次环境检查：
+
+```text
+torch = 2.6.0+cu124
+torch.cuda.is_available() = False
+resolved device = cpu
+```
+
+因此本轮训练没有调用显卡。后续如果运行环境能看到 CUDA，默认 `--device auto` 会使用 `cuda:0`；如需强制显卡，可用 `--device cuda --allow-tf32`。如果 CUDA 不可见而强制 `--device cuda`，脚本会直接报错，避免误以为已经用 GPU。
+
+### 17.2 输出路径
+
+manifest：
+
+```text
+centralized_v1_output/stage5_residual_pinn_manifest_20260608/
+  centralized_training_manifest.json
+  centralized_training_manifest.md
+```
+
+report_v1：
+
+```text
+centralized_v1_output/stage5_residual_pinn_report_v1_20260608/
+  dataset/
+  train/
+  train_cap1/
+  analysis_cap3/
+  analysis_cap1/
+  apply_cap1/
+```
+
+### 17.3 数据集情况
+
+输入：
+
+```text
+centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/stage4_point_departures.csv
+```
+
+数据集：
+
+| split | frames | points | baseline RMSE | baseline MAE | >=30mps tail |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `train` | 140 | 381 | 13.725408 | 7.078873 | 16 |
+| `val` | 30 | 86 | 8.617390 | 5.458972 | 3 |
+| `test` | 30 | 63 | 24.379358 | 7.402198 | 2 |
+
+解释：
+
+```text
+split 是 frame/time split，不是随机 point split。
+同一 frame 内的点不会同时进入 train 和 val/test。
+test split 本身更难，baseline RMSE 24.379358，适合检验残差模型是否会在困难时段乱修。
+```
+
+feature policy：
+
+```text
+truth-free feature count = 64
+gt_u / gt_v / gt_speed / vector_error / u_error / v_error 不作为模型输入。
+qc_review_flag / qc_review_reasons 不作为模型输入。
+point_neighbor_*_vector_error 和 representativeness_gap_point_minus_min_mps 不作为模型输入。
+motion_records / context_motion_records 不作为 wind label。
+```
+
+### 17.4 模型原理
+
+本轮 `report_v1` 不是 full-field PINN，而是残差神经网络的第一步统计验证：
+
+```text
+输入：tp26 point prediction + support/role/vertical/confidence/reliability proxy features
+标签：target_delta_u = gt_u - pred_u, target_delta_v = gt_v - pred_v
+输出：delta_u, delta_v, sigma_u, sigma_v
+候选：candidate = tp26 + residual_gate * clipped_delta
+```
+
+训练约束：
+
+```text
+small residual MLP
+Huber residual loss
+representation-aware sample weight
+uncertainty output
+delta cap = 3.0m/s 或 1.0m/s
+truth-free residual_gate_initial
+```
+
+这回答的是：
+
+```text
+在不写回 3D 场之前，残差网络是否能在 frame split 的 held-out points 上稳定改善 tp26？
+```
+
+它还不能称为真正的 `field_v1` PINN，因为没有在 3D collocation field 上计算 divergence/smoothness physics loss，也没有生成 Stage5 full NPZ。
+
+### 17.5 训练与对比结果
+
+`delta_cap_mps=3.0`：
+
+| split | points | baseline RMSE | candidate RMSE | delta RMSE | P95 base/cand | P99 base/cand | light RMSE base/cand | floor10 base/cand |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| `train` | 381 | 13.725409 | 13.491567 | -0.233841 | 27.009253 / 25.683163 | 66.457703 / 66.828355 | 5.543500 / 5.157649 | 0.304833 / 0.282287 |
+| `val` | 86 | 8.617390 | 8.727690 | +0.110300 | 16.937550 / 17.250517 | 35.747788 / 37.074938 | 4.799782 / 4.938477 | 0.273249 / 0.282020 |
+| `test` | 63 | 24.379358 | 24.350354 | -0.029004 | 11.790345 / 12.303475 | 105.904659 / 105.517558 | 3.420118 / 4.142161 | 0.162625 / 0.180124 |
+| `all` | 530 | 14.769036 | 14.618196 | -0.150840 | 23.889508 / 22.642983 | 63.542788 / 63.739192 | 5.266499 / 5.044990 | 0.282804 / 0.270100 |
+
+`delta_cap_mps=1.0`：
+
+| split | points | baseline RMSE | candidate RMSE | delta RMSE | P95 base/cand | P99 base/cand | light RMSE base/cand | floor10 base/cand |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| `train` | 381 | 13.725409 | 13.625758 | -0.099651 | 27.009253 / 26.219658 | 66.457703 / 66.616774 | 5.543500 / 5.353065 | 0.304833 / 0.292559 |
+| `val` | 86 | 8.617390 | 8.622928 | +0.005537 | 16.937550 / 17.081438 | 35.747788 / 36.643507 | 4.799782 / 4.789573 | 0.273249 / 0.272001 |
+| `test` | 63 | 24.379358 | 24.370117 | -0.009241 | 11.790345 / 12.566282 | 105.904659 / 105.784732 | 3.420118 / 3.721781 | 0.162625 / 0.165183 |
+| `all` | 530 | 14.769036 | 14.701260 | -0.067776 | 23.889508 / 23.578447 | 63.542788 / 63.640361 | 5.266499 / 5.136388 | 0.282804 / 0.274083 |
+
+test split guardrail：
+
+```text
+weighted_rmse_not_worse = PASS
+p95_not_worse = FAIL
+p99_not_worse = PASS
+light_rmse_not_worse = FAIL
+light_mae_not_worse = FAIL
+floor10_not_worse = FAIL
+no_new_light_moderate_tail_failure = PASS
+high_error_count_not_worse = PASS
+POINT_REPORT_OVERALL = FAIL
+```
+
+结论：
+
+```text
+all-points 表面上有改善，说明 residual learning 有信号。
+但 frame-split test 中 P95、light wind、floor10 relative 被污染。
+当前 report_v1 没有通过 guardrail。
+```
+
+### 17.6 “不进入 field_v1” 的含义
+
+这里的“不进入 field_v1”不是说 PINN 不能作为 Stage5 后处理，也不是说它必须替换 tp26 才算成功。含义是：
+
+```text
+当前 point-level report_v1 还没有证明 residual model 在未见过的 frame 上足够安全。
+因此暂时不要把它扩展成 3D field-collocation PINN，也不要生成 Stage5 full-field candidate 去跑 200-frame formal gate。
+```
+
+用户目标“在需要的地方用 PINN”是正确方向。下一步应把 `gate` 做得更严格、更分 regime，而不是全体 holdout 点都允许小残差：
+
+```text
+只在 support-strong、role-gap-low、非 light-wind 敏感、非 high-tail-risk 的 bucket 中启用 residual。
+在 5-15mps light wind、floor10 relative 敏感区，默认 gate=0 或极低。
+在 high sigma_rep / no-claim / remote-support 区域，PINN 主要输出 uncertainty，不做大幅修正。
+```
+
+### 17.7 下一步优化方向
+
+下一轮不要直接进入 `field_v1`。建议先做 `tp26_residual_pinn_report_v2_guarded`：
+
+```text
+1. 对 test split 做 regime audit：
+   找出 residual 改善/劣化分别集中在哪些 truth-free bucket。
+
+2. 改 gate：
+   light wind 5-15mps proxy 或 pred_speed 5-15mps 默认强保护；
+   floor10-sensitive bucket 降 gate；
+   role_gap>=20、nearest_distance>4、recon_confidence<0.2、context_only 均降 gate；
+   high reliability + current support >=1 + role_gap<20 才允许较大 gate。
+
+3. 改 loss：
+   light/floor10 penalty 进入 validation objective；
+   early stopping 用 val_guardrail_score，而不是只看 val RMSE；
+   对 P95/P99 劣化加入 soft penalty。
+
+4. 改模型：
+   先用更小模型或 linear/GBDT residual baseline 做对照；
+   residual head 分 regime 训练或 mixture-of-experts；
+   uncertainty 高时自动 shrink delta。
+
+5. 通过标准：
+   test split weighted RMSE、P95、P99、light RMSE/MAE、floor10 relative 全部不劣化；
+   再进入 field_v1。
+```
+
+只有 `report_v2_guarded` 通过后，才建议做：
+
+```text
+tp26_residual_pinn_field_v1
+  3D collocation dataset
+  weak divergence loss
+  edge-aware smoothness loss
+  vertical gradient preservation
+  two-frame smoke
+  200-frame formal gate
+```
