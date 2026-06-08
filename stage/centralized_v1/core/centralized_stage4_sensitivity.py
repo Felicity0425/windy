@@ -480,6 +480,30 @@ def _evaluate_metrics_only(
         "local_consistency_conf_mean": confidence_diagnostics["local_consistency_conf_stats"]["mean"],
         "obs_error_sigma_vector_mps_mean": confidence_diagnostics["obs_error_sigma_vector_mps_stats"]["mean"],
         "obs_error_weight_factor_mean": confidence_diagnostics["obs_error_weight_factor_stats"]["mean"],
+        "representation_error_soft_weight_factor_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_factor_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_factor_min": (
+            confidence_diagnostics.get("representation_error_soft_weight_factor_stats", {}) or {}
+        ).get("min"),
+        "representation_error_soft_weight_factor_max": (
+            confidence_diagnostics.get("representation_error_soft_weight_factor_stats", {}) or {}
+        ).get("max"),
+        "representation_error_soft_weight_score_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_score_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_current_factor_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_current_factor_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_context_factor_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_context_factor_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_changes_reconstruction": bool(
+            confidence_diagnostics.get("representation_error_soft_weight_changes_reconstruction", False)
+        ),
+        "representation_error_soft_weight_uses_holdout_truth": bool(
+            confidence_diagnostics.get("representation_error_soft_weight_uses_holdout_truth", False)
+        ),
         "diffusion_fill_new_voxels": int(refine_metrics["diffusion_fill_new_voxels"]),
         "observation_anchor_weight": float(observation_anchor_weight),
         "speed_limit_mps": float(speed_limit_mps),

@@ -84,7 +84,7 @@ LOCALIZATION_POLICIES = {
 }
 GUARDED_VERTICAL_LOCALIZATION_POLICIES = {"guarded_dynamic_v2", "guarded_vertical_dynamic_v2"}
 VERTICAL_LOCALIZATION_POLICIES = {"fixed", "support_adaptive", *GUARDED_VERTICAL_LOCALIZATION_POLICIES}
-CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted", "obs_error_weighted"}
+CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted", "obs_error_weighted", "representation_error_soft_weighted"}
 PHYSICS_CONSTRAINT_MODES = {"proxy", "pydda_3dvar_proxy"}
 ROLE_CONFLICT_MODES = {"off", "current_priority", "current_priority_adaptive"}
 VERTICAL_RISK_MODES = {"off", "preserve_strong_layers"}
@@ -117,6 +117,15 @@ DEFAULT_QC_CALIBRATION = {
     "speed_soft_factor": 0.80,
     "time_spread_halflife_minutes": 180.0,
     "local_consistency_min": 0.25,
+    "representation_error_soft_weight_strength": 0.45,
+    "representation_error_soft_weight_min_current": 0.75,
+    "representation_error_soft_weight_min_context": 0.45,
+    "representation_error_soft_weight_high_altitude_m": 12000.0,
+    "representation_error_soft_weight_mid_altitude_m": 9000.0,
+    "representation_error_soft_weight_speed_start_mps": 30.0,
+    "representation_error_soft_weight_speed_full_mps": 100.0,
+    "representation_error_soft_weight_context_stale_time_conf": 0.55,
+    "representation_error_soft_weight_density_count_scale": 4.0,
     "role_conflict_adaptive_height_threshold_gain": 0.35,
     "role_conflict_adaptive_sparse_current_threshold_gain": 0.25,
     "role_conflict_adaptive_stale_context_threshold_reduction": 0.30,
@@ -342,6 +351,10 @@ def _cal_float(calibration: dict[str, Any], key: str, default: float) -> float:
     return _safe_float(calibration.get(key), default)
 
 
+def _clip(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return float(max(lo, min(hi, value)))
+
+
 def _speed_qc_factor(row: dict[str, Any], calibration: dict[str, Any]) -> float:
     flag = str(row.get("qc_flags", "ok") or "ok")
     speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
@@ -474,6 +487,76 @@ def _obs_error_weight_bundle(row: dict[str, Any], calibration: dict[str, Any]) -
     }
 
 
+def _representation_error_soft_weight_bundle(
+    row: dict[str, Any],
+    calibration: dict[str, Any],
+    *,
+    source_role: str,
+    diagnostic_factors: dict[str, float],
+) -> dict[str, float | str]:
+    speed = math.sqrt(_safe_float(row.get("u")) ** 2 + _safe_float(row.get("v")) ** 2)
+    altitude = _safe_float(row.get("alt_meters"), ALT_MIN + max(0, _safe_int(row.get("z"), 0)) * DELTA_ALT)
+    time_conf = _safe_float(row.get("time_conf"), 1.0 if source_role == "current_wind_train" else 0.0)
+    obs_count = max(0.0, _safe_float(row.get("obs_count"), _safe_float(row.get("motion_count"), 1.0)))
+
+    high_altitude_m = _cal_float(calibration, "representation_error_soft_weight_high_altitude_m", 12000.0)
+    mid_altitude_m = _cal_float(calibration, "representation_error_soft_weight_mid_altitude_m", 9000.0)
+    speed_start = _cal_float(calibration, "representation_error_soft_weight_speed_start_mps", 30.0)
+    speed_full = max(speed_start + 1e-6, _cal_float(calibration, "representation_error_soft_weight_speed_full_mps", 100.0))
+    stale_time_conf = _cal_float(calibration, "representation_error_soft_weight_context_stale_time_conf", 0.55)
+    density_scale = max(1e-6, _cal_float(calibration, "representation_error_soft_weight_density_count_scale", 4.0))
+
+    altitude_component = 1.0 if altitude >= high_altitude_m else (0.5 if altitude >= mid_altitude_m else 0.0)
+    speed_component = _clip((speed - speed_start) / (speed_full - speed_start))
+    density_component = float(np.exp(-obs_count / density_scale))
+    consistency_component = 1.0 - float(np.clip(diagnostic_factors.get("local_consistency_conf_factor", 1.0), 0.0, 1.0))
+    speed_qc_component = 1.0 - float(np.clip(diagnostic_factors.get("speed_qc_conf_factor", 1.0), 0.0, 1.0))
+    context_role_component = 1.0 if source_role == "context_wind" else 0.0
+    stale_context_component = _clip((stale_time_conf - time_conf) / max(stale_time_conf, 1e-6)) if source_role == "context_wind" else 0.0
+
+    risk_score = float(
+        np.clip(
+            0.18 * altitude_component
+            + 0.22 * speed_component
+            + 0.14 * density_component
+            + 0.12 * consistency_component
+            + 0.10 * speed_qc_component
+            + 0.10 * context_role_component
+            + 0.14 * stale_context_component,
+            0.0,
+            1.0,
+        )
+    )
+    strength = float(np.clip(_cal_float(calibration, "representation_error_soft_weight_strength", 0.45), 0.0, 1.0))
+    min_current = float(np.clip(_cal_float(calibration, "representation_error_soft_weight_min_current", 0.75), 0.0, 1.0))
+    min_context = float(np.clip(_cal_float(calibration, "representation_error_soft_weight_min_context", 0.45), 0.0, 1.0))
+    min_factor = min_context if source_role == "context_wind" else min_current
+    factor = float(np.clip(1.0 - strength * risk_score, min_factor, 1.0))
+    active_reasons = []
+    if altitude_component > 0.0:
+        active_reasons.append("high_altitude")
+    if speed_component > 0.0:
+        active_reasons.append("strong_speed")
+    if density_component >= 0.50:
+        active_reasons.append("low_obs_count")
+    if stale_context_component > 0.0:
+        active_reasons.append("stale_context")
+    if consistency_component > 0.0:
+        active_reasons.append("local_inconsistency")
+    if speed_qc_component > 0.0:
+        active_reasons.append("speed_qc")
+    return {
+        "representation_error_soft_weight_factor": factor,
+        "representation_error_soft_weight_score": risk_score,
+        "representation_error_soft_weight_altitude_component": float(altitude_component),
+        "representation_error_soft_weight_speed_component": float(speed_component),
+        "representation_error_soft_weight_density_component": float(density_component),
+        "representation_error_soft_weight_consistency_component": float(consistency_component),
+        "representation_error_soft_weight_stale_context_component": float(stale_context_component),
+        "representation_error_soft_weight_reasons": ";".join(active_reasons) if active_reasons else "low_risk",
+    }
+
+
 def _build_wind_observations(
     train_current_wind: list[dict[str, Any]],
     context_wind: list[dict[str, Any]],
@@ -494,14 +577,26 @@ def _build_wind_observations(
     for row in train_current_wind:
         factors = _diagnostic_factor_bundle(row, calibration)
         obs_error = _obs_error_weight_bundle(row, calibration)
+        representation_soft = _representation_error_soft_weight_bundle(
+            row,
+            calibration,
+            source_role="current_wind_train",
+            diagnostic_factors=factors,
+        )
         if confidence_mode == "obs_error_weighted":
             use_diag = _safe_float(calibration.get("obs_error_use_diagnostic_factor"), 1.0) > 0.0
             diagnostic_multiplier = factors["combined_diagnostic_factor"] if use_diag else 1.0
             time_conf = _safe_float(row.get("time_conf"), 1.0)
             base_weight = max(0.0, time_conf) * float(obs_error["obs_error_weight_factor"]) * diagnostic_multiplier * current_weight_boost
         else:
-            diagnostic_multiplier = factors["combined_diagnostic_factor"] if confidence_mode == "diagnostic_weighted" else 1.0
+            diagnostic_multiplier = (
+                factors["combined_diagnostic_factor"]
+                if confidence_mode in {"diagnostic_weighted", "representation_error_soft_weighted"}
+                else 1.0
+            )
             base_weight = _active_base_weight(row, default_time_conf=1.0) * diagnostic_multiplier * current_weight_boost
+            if confidence_mode == "representation_error_soft_weighted":
+                base_weight *= float(representation_soft["representation_error_soft_weight_factor"])
         observations.append(
             {
                 "source_role": "current_wind_train",
@@ -519,22 +614,35 @@ def _build_wind_observations(
                 "role_weight_multiplier": current_weight_boost,
                 **factors,
                 **obs_error,
+                **representation_soft,
             }
         )
     for row in context_wind:
         factors = _diagnostic_factor_bundle(row, calibration)
         obs_error = _obs_error_weight_bundle(row, calibration)
+        representation_soft = _representation_error_soft_weight_bundle(
+            row,
+            calibration,
+            source_role="context_wind",
+            diagnostic_factors=factors,
+        )
         if confidence_mode == "obs_error_weighted":
             use_diag = _safe_float(calibration.get("obs_error_use_diagnostic_factor"), 1.0) > 0.0
             diagnostic_multiplier = factors["combined_diagnostic_factor"] if use_diag else 1.0
         else:
-            diagnostic_multiplier = factors["combined_diagnostic_factor"] if confidence_mode == "diagnostic_weighted" else 1.0
+            diagnostic_multiplier = (
+                factors["combined_diagnostic_factor"]
+                if confidence_mode in {"diagnostic_weighted", "representation_error_soft_weighted"}
+                else 1.0
+            )
         time_conf = _safe_float(row.get("time_conf"), 0.0)
         time_power_factor = time_conf ** max(0.0, context_time_conf_power - 1.0) if time_conf > 0.0 else 0.0
         if confidence_mode == "obs_error_weighted":
             base_weight = time_conf * float(obs_error["obs_error_weight_factor"]) * diagnostic_multiplier * context_weight_scale * time_power_factor
         else:
             base_weight = _active_base_weight(row, default_time_conf=0.0) * diagnostic_multiplier * context_weight_scale * time_power_factor
+            if confidence_mode == "representation_error_soft_weighted":
+                base_weight *= float(representation_soft["representation_error_soft_weight_factor"])
         observations.append(
             {
                 "source_role": "context_wind",
@@ -553,6 +661,7 @@ def _build_wind_observations(
                 "context_time_conf_power": context_time_conf_power,
                 **factors,
                 **obs_error,
+                **representation_soft,
             }
         )
     filtered = [
@@ -573,8 +682,30 @@ def _build_wind_observations(
         "combined_diagnostic_factor_stats": _factor_stats([row["combined_diagnostic_factor"] for row in filtered]),
         "obs_error_sigma_vector_mps_stats": _factor_stats([row["obs_error_sigma_vector_mps"] for row in filtered]),
         "obs_error_weight_factor_stats": _factor_stats([row["obs_error_weight_factor"] for row in filtered]),
+        "representation_error_soft_weight_factor_stats": _factor_stats(
+            [row["representation_error_soft_weight_factor"] for row in filtered]
+        ),
+        "representation_error_soft_weight_score_stats": _factor_stats(
+            [row["representation_error_soft_weight_score"] for row in filtered]
+        ),
+        "representation_error_soft_weight_current_factor_stats": _factor_stats(
+            [
+                row["representation_error_soft_weight_factor"]
+                for row in filtered
+                if str(row.get("source_role")) == "current_wind_train"
+            ]
+        ),
+        "representation_error_soft_weight_context_factor_stats": _factor_stats(
+            [
+                row["representation_error_soft_weight_factor"]
+                for row in filtered
+                if str(row.get("source_role")) == "context_wind"
+            ]
+        ),
         "qc_flags_counts": _qc_counts(filtered),
         "qc_calibration": calibration,
+        "representation_error_soft_weight_changes_reconstruction": confidence_mode == "representation_error_soft_weighted",
+        "representation_error_soft_weight_uses_holdout_truth": False,
         "current_weight_boost": float(current_weight_boost),
         "context_weight_scale": float(context_weight_scale),
         "context_time_conf_power": float(context_time_conf_power),
@@ -3699,6 +3830,7 @@ def process_frame(
             "diagnostic_only": "obs_conf * time_conf * target_voxel_localization",
             "diagnostic_weighted": "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors",
             "obs_error_weighted": "time_conf * aircraft_wind_obs_error_or_representativeness_prior_weight * target_voxel_localization * optional_diagnostic_confidence_factors",
+            "representation_error_soft_weighted": "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors * truth_free_representation_error_soft_weight",
         }.get(str(confidence_mode), str(confidence_mode)),
         "motion_as_wind": False,
         "pinn_diffusion_refine": bool(refine_metrics.get("pinn_diffusion_refine_enabled", 0.0)),
@@ -3883,6 +4015,24 @@ def process_frame(
         "active_no_claim_voxels": int(reliability_diagnostics.get("active_no_claim_voxels", 0)),
         "active_no_claim_fraction": float(reliability_diagnostics.get("active_no_claim_fraction", 0.0)),
         "reliability_diagnostics": reliability_diagnostics,
+        "representation_error_soft_weight_factor_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_factor_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_score_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_score_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_current_factor_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_current_factor_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_context_factor_mean": (
+            confidence_diagnostics.get("representation_error_soft_weight_context_factor_stats", {}) or {}
+        ).get("mean"),
+        "representation_error_soft_weight_changes_reconstruction": bool(
+            confidence_diagnostics.get("representation_error_soft_weight_changes_reconstruction", False)
+        ),
+        "representation_error_soft_weight_uses_holdout_truth": bool(
+            confidence_diagnostics.get("representation_error_soft_weight_uses_holdout_truth", False)
+        ),
         "confidence_mode": str(confidence_mode),
         "localization_kernel": str(localization_kernel),
         "localization_policy": str(localization_policy),

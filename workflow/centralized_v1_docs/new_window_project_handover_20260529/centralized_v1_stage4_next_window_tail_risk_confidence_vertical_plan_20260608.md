@@ -8,13 +8,15 @@
 tp26_thr11_preserve
 ```
 
-已经完成 Step 1-3 的代码、smoke 验证和 Step 3 的 200 帧 formal gate，但没有把任何新分支升默认：
+已经完成 Step 1-3、representation-error report-only、representation soft-weight candidate 的代码、
+smoke 验证和 200 帧 formal gate，但没有把任何新分支升默认：
 
 ```text
 Step 1 tail_risk_score report-only: 已完成，证明 tail-risk/no-claim 方向有效。
 Step 2 confidence_v2_reliability: 已完成，新增 reliability/tail/no-claim 3D 输出，不改 recon。
 Step 3 guarded_vertical_dynamic_v2: 已完成代码、两帧 smoke、200 帧/530 点 formal gate；结果 FAIL，不升默认。
-Step 4 guarded_background_rescue: 未开始；Step 3 已明确失败，下一步应先分析 guard 诊断，不直接进入背景救援。
+Step 4a representation_error_soft_weighted: 已完成代码、两帧 smoke、200 帧/530 点 formal gate；结果 PASS，但提升很小，暂作为候选保留，不自动升默认。
+Step 4 guarded_background_rescue: 未开始；Step 3 已明确失败，背景救援仍必须先约束 near-zero/no-claim/remote-support 触发区域。
 ```
 
 新窗口最重要的边界：
@@ -37,6 +39,7 @@ reliability/no_claim 只做产品解释和后续 guard，不删除 official hold
 | Step 1 tail-risk | done | `baseline_rule_v1` 捕获 21/21 高错点，unflagged RMSE `5.501192` |
 | Step 2 reliability | done smoke | 新增 4 个 NPZ 合同字段和 point eval 字段，不改变 official recon |
 | Step 3 guarded vertical | done, reject | all-holdout formal gate FAIL：weighted RMSE `14.853289`、P95 `28.681533`、12km+ `20.063442` 均劣化 |
+| Step 4a rep soft weight | done, candidate pass | `tp26_rep_soft_weight_v1` weighted RMSE `14.755381`，P95/P99/12km+/light/floor10 formal gate 全 PASS；提升很小，未升默认 |
 
 ### 关键输出路径
 
@@ -64,6 +67,14 @@ centralized_v1_output/stage4_guarded_vertical_dynamic_v2_200_20260608/analysis/t
 Step 3 guarded vertical holdout-count=1 diagnostic only, not promotion:
 centralized_v1_output/stage4_guarded_vertical_dynamic_v2_200_20260608/tp26_guarded_vertical_dynamic_v2_metrics/
 centralized_v1_output/stage4_guarded_vertical_dynamic_v2_200_20260608/analysis/tp26_vs_guarded_vertical_dynamic_v2_formal_guardrail/
+
+Step 4a representation soft-weight smoke:
+centralized_v1_output/stage4_representation_soft_weight_smoke_20260608/tp26_rep_soft_weight_v1_metrics/
+
+Step 4a representation soft-weight formal:
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/tp26_rep_soft_weight_v1_metrics/
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_formal_guardrail/
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_error_source/
 
 200-frame validation frame list:
 centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/stage4_validation_frame_times.txt
@@ -438,6 +449,129 @@ representation-error / sigma_rep / tail probability 可以先作为 report-only 
 ```
 
 只有 report-only 证明 `sigma_rep/tail probability` 可校准后，才允许进入 `tp26_robust_weight_v1` 或 `tp26_local_residual_gp_v1` 的 200-frame formal gate。本轮 report-only 已满足最小 checklist，但还没有改任何 recon 或默认分支。
+
+### 2026-06-08 tp26_rep_soft_weight_v1 Formal Gate 实施记录
+
+本轮把 report-only representation-error 方向落成一个保守 soft-weight candidate，没有做 residual GP。
+
+代码改动：
+
+```text
+stage/centralized_v1/core/centralized_stage4_ground_recon.py
+stage/centralized_v1/core/centralized_stage4_sensitivity.py
+```
+
+新增模式：
+
+```text
+--confidence-mode representation_error_soft_weighted
+```
+
+实现边界：
+
+```text
+truth_free_representation_error_soft_weight = True
+representation_error_soft_weight_uses_holdout_truth = False
+representation_error_soft_weight_changes_reconstruction = True
+official holdout points retained = 530
+motion_records / context_motion_records still not used as wind
+soft downweight only; no hard delete; no holdout masking
+default branch remains tp26_thr11_preserve
+```
+
+soft weight 只使用训练/current/context observation 本身和已有 QC 诊断，按 altitude、wind speed、
+local consistency、speed QC、source role、context staleness、obs density 形成在线 representation-risk proxy。
+当前 conservative 参数：
+
+```text
+representation_error_soft_weight_strength = 0.45
+representation_error_soft_weight_min_current = 0.75
+representation_error_soft_weight_min_context = 0.45
+representation_error_soft_weight_high_altitude_m = 12000.0
+representation_error_soft_weight_mid_altitude_m = 9000.0
+representation_error_soft_weight_speed_start_mps = 30.0
+representation_error_soft_weight_speed_full_mps = 100.0
+```
+
+两帧 smoke：
+
+```text
+centralized_v1_output/stage4_representation_soft_weight_smoke_20260608/tp26_rep_soft_weight_v1_metrics/
+```
+
+结果：
+
+| frame | weighted/vector RMSE | strict holdout | motion as wind |
+| --- | ---: | --- | --- |
+| `20260205190000` | `86.000000` | True | False |
+| `20260206074200` | `3.046588` | True | False |
+
+200-frame formal candidate：
+
+```text
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/tp26_rep_soft_weight_v1_metrics/
+```
+
+正式对比输出：
+
+```text
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_formal_guardrail/tp26_vs_rep_soft_weight_v1.md
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_formal_guardrail/tp26_vs_rep_soft_weight_v1_promotion_checklist.md
+centralized_v1_output/stage4_representation_soft_weight_200_20260608/analysis/tp26_vs_rep_soft_weight_v1_error_source/tp26_vs_rep_soft_weight_v1.md
+```
+
+行数检查：
+
+```text
+stage4_localization_sensitivity.csv = 200 rows + header
+stage4_point_departures.csv = 530 rows + header
+```
+
+soft-weight 诊断：
+
+| field | value |
+| --- | ---: |
+| factor mean | `0.841286` |
+| factor min | `0.806857` |
+| factor max | `0.866403` |
+| current factor mean | `0.893854` |
+| context factor mean | `0.840190` |
+| score mean | `0.352699` |
+
+Promotion checklist：
+
+| gate | baseline `tp26_thr11_preserve` | candidate `tp26_rep_soft_weight_v1` | result |
+| --- | ---: | ---: | --- |
+| weighted RMSE | `14.769036` | `14.755381` | PASS |
+| frame P95 | `27.986111` | `27.947974` | PASS |
+| frame P99 | `58.783770` | `58.756881` | PASS |
+| 12km+ vector RMSE | `19.917698` | `19.884741` | PASS |
+| light wind RMSE | `5.195877` | `5.165311` | PASS |
+| light wind MAE | `4.185283` | `4.160541` | PASS |
+| floor10 relative MAE | `0.282804` | `0.281212` | PASS |
+| light/moderate relative-tail new failure | `0` | `0` | PASS |
+
+Formal gate 结论：
+
+```text
+PROMOTION_OVERALL = PASS
+weighted RMSE delta = -0.013655 m/s
+high-error >=30mps points remain = 21
+extreme tail is not solved
+```
+
+Error-source decomposition 结论：
+
+```text
+Source priority remains:
+1. vertical_structure
+2. representation_error
+3. sparse_support
+
+candidate improves aggregate RMSE very slightly, but some extreme high-speed tail points still worsen.
+因此 tp26_rep_soft_weight_v1 可以作为候选分支保留，但不要仅凭这 200 帧小幅 PASS 直接替换默认。
+下一步推荐扩大到 500-1000 帧或全量 5614 holdout-only validation，再决定是否升默认。
+```
 
 200 帧结果根目录：
 
@@ -1152,20 +1286,21 @@ u_motion/v_motion = aircraft ground motion，不是 wind。
 ## 下一窗口建议执行顺序
 
 当前 Step 1-3 已完成代码、smoke 和 Step 3 all-holdout formal gate；本轮又完成了
-`centralized_stage4_representation_error_report.py` 的 report-only calibration。新窗口不要重复从
-Step 1 开始，建议按以下顺序：
+`centralized_stage4_representation_error_report.py` 的 report-only calibration，并把
+`representation_error_soft_weighted / tp26_rep_soft_weight_v1` 跑完 200-frame formal gate，结果 PASS。
+新窗口不要重复从 Step 1 开始，建议按以下顺序：
 
 ```text
 1. 先读 guarded_vertical_dynamic_v2 all-holdout formal checklist 和 error-source decomposition。
 2. 不推广 guarded_vertical_dynamic_v2；它已 FAIL：weighted/P95/12km+/light/floor10 均劣化。
 3. 先读 representation_error_report，确认 truth-free score/bucket calibration 和 no-claim 语义。
-4. 如果进入 tp26_robust_weight_v1，只做 soft downweight，不 hard delete official holdout。
+4. 已有 tp26_rep_soft_weight_v1：200 帧 formal gate PASS，但 aggregate gain 只有 0.013655 m/s；先扩大到 500-1000 帧或全量 5614 holdout-only validation，再考虑升默认。
 5. 如果进入 tp26_local_residual_gp_v1，必须 cross-fit training residual，不能用 holdout residual。
 6. 如果继续垂直方向，只做更保守的 per-point/regime-aware guard，不要直接调大动态垂直范围。
 7. Step 4 guarded_background_rescue 只针对 near-zero/no-claim/remote-support，不允许污染 high-confidence aircraft-supported voxels。
 ```
 
-200 帧 guarded candidate 正式复现命令已写在本文顶部“新窗口第一动作”。核心参数必须保持：
+200 帧 guarded vertical candidate 正式复现命令已写在本文顶部“新窗口第一动作”。核心参数必须保持：
 
 ```text
 --param-grid 8,4,2,1
