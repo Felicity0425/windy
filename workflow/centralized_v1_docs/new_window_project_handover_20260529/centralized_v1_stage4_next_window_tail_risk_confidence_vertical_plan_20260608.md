@@ -311,6 +311,8 @@ centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_err
   representation_error_feature_summary.csv
   representation_error_bucket_calibration.csv
   representation_error_rule_candidates.csv
+  representation_error_top_points.csv
+  representation_error_run_metadata.json
   representation_error_report.md
 ```
 
@@ -325,7 +327,117 @@ low risk bucket RMSE clearly below 14.769036
 reliability/no-claim does not remove official holdout points
 ```
 
-只有 report-only 证明 `sigma_rep/tail probability` 可校准后，再进入 `tp26_robust_weight_v1` 或 `tp26_local_residual_gp_v1` 的 200-frame formal gate。
+### 2026-06-08 Representation-Error Report-Only 实施记录
+
+已落地代码：
+
+```text
+stage/centralized_v1/core/centralized_stage4_representation_error_report.py
+```
+
+运行：
+
+```bash
+/data/LFT-W02_data/pengxu/.conda/envs/windy310/bin/python -m py_compile \
+  stage/centralized_v1/core/centralized_stage4_representation_error_report.py
+
+/data/LFT-W02_data/pengxu/.conda/envs/windy310/bin/python \
+  stage/centralized_v1/core/centralized_stage4_representation_error_report.py
+```
+
+输出：
+
+```text
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/representation_error_feature_summary.csv
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/representation_error_bucket_calibration.csv
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/representation_error_rule_candidates.csv
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/representation_error_top_points.csv
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/representation_error_run_metadata.json
+centralized_v1_output/stage4_tail_risk_confidence_v2_20260608/representation_error_report/representation_error_report.md
+```
+
+实现边界：
+
+```text
+report_only_no_recon_change = True
+truth_used_for_report_targets = True
+truth_used_for_score_features = False
+strict_holdout_no_leakage = True
+motion_used_as_wind = False
+official holdout points retained = 530
+```
+
+`representation_error_score` 和 rule 只使用 truth-free 支撑/重构诊断字段：
+
+```text
+nearest_train_distance_vox
+nearest_role_gap_mps
+recon_confidence
+nearest current/context support
+nearest_train_source_role
+nearest_train_u/v speed proxy
+recon_vertical_jump_mps
+vertical_speed_gap_mps
+altitude bin
+role_conflict diagnostics
+adaptive support diagnostics
+```
+
+明确排除：
+
+```text
+vector_error
+gt_u/gt_v/gt_speed
+qc_review_flag / qc_review_reasons
+point_neighbor_*_vector_error
+representativeness_gap_point_minus_min_mps
+```
+
+关键结果：
+
+| item | value |
+| --- | ---: |
+| points | 530 |
+| overall RMSE | 14.769036 |
+| high-error `>=30mps` count | 21 |
+| low-risk `score < 0.20` RMSE | 7.072306 |
+| `score >= 0.20` flagged points | 195 |
+| `score >= 0.20` high-error recall | 0.857143 |
+| `score >= 0.20` SSE share captured | 0.855061 |
+| truth-free conservative rule flagged points | 328 |
+| truth-free conservative rule high-error recall | 1.000000 |
+| truth-free conservative rule unflagged RMSE | 5.520299 |
+| truth-free conservative rule SSE share captured | 0.946753 |
+
+score bucket calibration：
+
+| score bucket | points | sigma_rep/RMSE | tail prob `>=30mps` | SSE share |
+| --- | ---: | ---: | ---: | ---: |
+| `lt_0p10` | 184 | 4.968807 | 0.000000 | 0.039295 |
+| `0p10_to_0p20` | 151 | 8.993405 | 0.019868 | 0.105644 |
+| `0p20_to_0p35` | 161 | 10.541081 | 0.031056 | 0.154745 |
+| `0p35_to_0p50` | 24 | 28.940198 | 0.208333 | 0.173874 |
+| `ge_0p50` | 10 | 78.012700 | 0.800000 | 0.526442 |
+
+最小 checklist：
+
+```text
+top-risk score>=0.20 SSE share = 0.855061 PASS
+top-risk score>=0.20 high-error recall = 0.857143 PASS
+low-risk score<0.20 RMSE = 7.072306 PASS
+conservative rule high-error recall = 1.000000 PASS
+all official holdout points retained = 530 PASS
+```
+
+结论：
+
+```text
+representation-error / sigma_rep / tail probability 可以先作为 report-only calibration。
+它证明 no-claim/reliability 分层有稳定解释价值，但不能删除 official holdout 点，也不能改变 official RMSE。
+下一步若进入 tp26_robust_weight_v1 或 tp26_local_residual_gp_v1，必须单独走 200-frame formal gate。
+```
+
+只有 report-only 证明 `sigma_rep/tail probability` 可校准后，才允许进入 `tp26_robust_weight_v1` 或 `tp26_local_residual_gp_v1` 的 200-frame formal gate。本轮 report-only 已满足最小 checklist，但还没有改任何 recon 或默认分支。
 
 200 帧结果根目录：
 
@@ -1039,14 +1151,18 @@ u_motion/v_motion = aircraft ground motion，不是 wind。
 
 ## 下一窗口建议执行顺序
 
-当前 Step 1-3 已完成代码、smoke 和 Step 3 all-holdout formal gate。新窗口不要重复从 Step 1 开始，建议按以下顺序：
+当前 Step 1-3 已完成代码、smoke 和 Step 3 all-holdout formal gate；本轮又完成了
+`centralized_stage4_representation_error_report.py` 的 report-only calibration。新窗口不要重复从
+Step 1 开始，建议按以下顺序：
 
 ```text
 1. 先读 guarded_vertical_dynamic_v2 all-holdout formal checklist 和 error-source decomposition。
 2. 不推广 guarded_vertical_dynamic_v2；它已 FAIL：weighted/P95/12km+/light/floor10 均劣化。
-3. 分析 guard fallback diagnostics，重点看 12km+、vertical_speed_gap、role_gap、light wind 的新增劣化。
-4. 如果继续垂直方向，只做更保守的 per-point/regime-aware guard，不要直接调大动态垂直范围。
-5. Step 4 guarded_background_rescue 只针对 near-zero/no-claim/remote-support，不允许污染 high-confidence aircraft-supported voxels。
+3. 先读 representation_error_report，确认 truth-free score/bucket calibration 和 no-claim 语义。
+4. 如果进入 tp26_robust_weight_v1，只做 soft downweight，不 hard delete official holdout。
+5. 如果进入 tp26_local_residual_gp_v1，必须 cross-fit training residual，不能用 holdout residual。
+6. 如果继续垂直方向，只做更保守的 per-point/regime-aware guard，不要直接调大动态垂直范围。
+7. Step 4 guarded_background_rescue 只针对 near-zero/no-claim/remote-support，不允许污染 high-confidence aircraft-supported voxels。
 ```
 
 200 帧 guarded candidate 正式复现命令已写在本文顶部“新窗口第一动作”。核心参数必须保持：
