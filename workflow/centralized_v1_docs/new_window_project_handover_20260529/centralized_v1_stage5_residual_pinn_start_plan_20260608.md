@@ -1408,3 +1408,187 @@ tp26_residual_pinn_field_v1_tail_safe_smoke
 ```
 
 如果 smoke 通过，再扩展到 200-frame formal candidate。
+
+## 19. 2026-06-09 full-data GPU sweep 运行方向
+
+用户恢复 GPU 设备节点后，主机可见：
+
+```text
+4 x NVIDIA GeForce RTX 4090
+GPU 0/1/2 mostly idle
+GPU 3 has robocasa python using ~14GB
+```
+
+因此 Stage5 下一步不应继续围绕 200-frame / 530-point 小报告调参。当前推荐转为：
+
+```text
+full tp26 point residual sweep
+  larger aircraft holdout point dataset
+  GPU 0/1/2 parallel candidate training
+  val-only truth-free gate selection
+  locked test point guardrail
+  only then field_v1 smoke
+```
+
+### 19.1 大数据入口
+
+使用更大的 tp26 departure 文件：
+
+```text
+centralized_v1_output/stage4_full_tp26_thr11_preserve_25w_taildiag_20260602_173319/stage4_point_departures.csv
+```
+
+已验证数据量：
+
+| split | frames | points | baseline RMSE | baseline MAE | >=30mps tail |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `train` | 3930 | 11044 | 15.298961 | 6.807320 | 407 |
+| `val` | 842 | 2117 | 13.805729 | 5.870153 | 64 |
+| `test` | 842 | 1893 | 9.896785 | 5.217920 | 25 |
+
+总计：
+
+```text
+frames = 5614
+points = 15054
+```
+
+这比原 report_v1 的 200 frames / 530 points 更适合训练 residual model。
+
+注意：
+
+```text
+这些仍是 aircraft point labels；
+不能把 motion/context/radar/CMA 当真值；
+不能用复制点或 jitter 点制造虚假真值；
+field_v1 的大规模训练应靠 truth-free collocation physics/background losses 扩展，而不是伪造 labels。
+```
+
+### 19.2 新增 GPU sweep runner
+
+新增：
+
+```text
+stage/centralized_v1/core/centralized_stage5_residual_pinn_gpu_sweep.py
+```
+
+功能：
+
+```text
+1. 如需要，先构建 full-data Stage5 point dataset；
+2. 生成 cap x seed 候选；
+3. 每次同时在 GPU 0/1/2 各跑一个训练进程；
+4. 每个训练进程强制 --device cuda --allow-tf32；
+5. 训练完成后自动跑 tail_safe + promotion_safe gate selection；
+6. 汇总 raw residual 与 gated residual 的 locked test guardrail。
+```
+
+训练脚本也补充：
+
+```text
+torch.set_float32_matmul_precision("high") when --allow-tf32
+cuda max_memory_allocated/reserved recorded in train_metrics.json
+```
+
+### 19.3 推荐完整运行命令
+
+先确保 GPU 设备节点存在：
+
+```bash
+cd /data/LFT-W02_data/pengxu
+sudo nvidia-modprobe -u -c=0
+nvidia-smi
+```
+
+正式 full-data GPU sweep：
+
+```bash
+cd /data/LFT-W02_data/pengxu
+/data/LFT-W02_data/pengxu/.conda/envs/windy310/bin/python \
+  stage/centralized_v1/core/centralized_stage5_residual_pinn_gpu_sweep.py \
+  --point-departures centralized_v1_output/stage4_full_tp26_thr11_preserve_25w_taildiag_20260602_173319/stage4_point_departures.csv \
+  --out-root centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_20260609 \
+  --gpu-ids 0,1,2 \
+  --caps 0.5,1.0,3.0 \
+  --seeds 20260608,20260609,20260610 \
+  --width 512 \
+  --layers 6 \
+  --batch-size 2048 \
+  --max-epochs 1200 \
+  --patience 160 \
+  --learning-rate 8e-4 \
+  --rule-profile tail_safe \
+  --selection-policy promotion_safe \
+  --promotion-safe-retain-fraction 0.50 \
+  --min-enabled 10
+```
+
+dry-run 检查 GPU 分配：
+
+```bash
+/data/LFT-W02_data/pengxu/.conda/envs/windy310/bin/python \
+  stage/centralized_v1/core/centralized_stage5_residual_pinn_gpu_sweep.py \
+  --point-departures centralized_v1_output/stage4_full_tp26_thr11_preserve_25w_taildiag_20260602_173319/stage4_point_departures.csv \
+  --out-root centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_20260609 \
+  --gpu-ids 0,1,2 \
+  --caps 0.5,1.0,3.0 \
+  --seeds 20260608,20260609,20260610 \
+  --dry-run
+```
+
+dry-run 分配结果应为：
+
+```text
+cap0p5_seed20260608 -> GPU 0
+cap0p5_seed20260609 -> GPU 1
+cap0p5_seed20260610 -> GPU 2
+cap1p0_seed20260608 -> GPU 0
+cap1p0_seed20260609 -> GPU 1
+cap1p0_seed20260610 -> GPU 2
+cap3p0_seed20260608 -> GPU 0
+cap3p0_seed20260609 -> GPU 1
+cap3p0_seed20260610 -> GPU 2
+```
+
+### 19.4 输出位置
+
+```text
+centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_20260609/
+  dataset_full_tp26/
+  train_cap*_seed*_w512_l6/
+  gate_cap*_seed*_w512_l6/
+  logs/
+  sweep_manifest.json
+  sweep_results.csv
+  sweep_results.json
+  sweep_report.md
+```
+
+### 19.5 通过后再做 field_v1
+
+full-data point sweep 的通过标准：
+
+```text
+locked test weighted RMSE not worse
+P95 not worse
+P99 not worse
+light RMSE/MAE not worse
+floor10 not worse
+no new light/mod tail failure
+high-error count not worse
+```
+
+只有通过的候选才能进入：
+
+```text
+tp26_residual_pinn_field_v1_tail_safe_smoke
+```
+
+field_v1 应只使用选中的 truth-free gate，在 2-5 个 frame 上先写 NPZ smoke：
+
+```text
+Stage5 field = Stage4 tp26 + selected_gate * residual_delta
+selected_gate is truth-free and fixed from val
+```
+
+smoke 通过后，再扩展到 full 200-frame / 5614-frame pairwise gate。默认产品仍保持 Stage4 `tp26_thr11_preserve`，直到 full-field formal gate 通过。

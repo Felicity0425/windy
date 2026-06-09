@@ -337,6 +337,7 @@ def main() -> None:
     if bool(args.allow_tf32):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
+        torch.set_float32_matmul_precision("high")
     train = _load_split(args.dataset_dir, "train")
     val = _load_split(args.dataset_dir, "val")
     test = _load_split(args.dataset_dir, "test")
@@ -399,6 +400,8 @@ def main() -> None:
         "cuda_available": bool(torch.cuda.is_available()),
         "cuda_device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "",
         "allow_tf32": bool(args.allow_tf32),
+        "cuda_memory_allocated_mb": float(torch.cuda.max_memory_allocated(device) / (1024.0**2)) if device.type == "cuda" else 0.0,
+        "cuda_memory_reserved_mb": float(torch.cuda.max_memory_reserved(device) / (1024.0**2)) if device.type == "cuda" else 0.0,
     }
 
     ckpt = {
