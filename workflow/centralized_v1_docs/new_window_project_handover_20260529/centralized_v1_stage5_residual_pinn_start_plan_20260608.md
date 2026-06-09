@@ -1212,3 +1212,199 @@ tp26_residual_pinn_field_v1
   two-frame smoke
   200-frame formal gate
 ```
+
+## 18. 2026-06-09 regime audit 与 truth-free gate selection 更新
+
+本节记录在 `report_v1` 原始全点 residual PINN 失败之后做的下一步诊断与 guarded gate 试验。
+
+### 18.1 新增脚本
+
+```text
+stage/centralized_v1/core/centralized_stage5_residual_pinn_regime_audit.py
+stage/centralized_v1/core/centralized_stage5_residual_pinn_gate_select.py
+```
+
+`regime_audit` 用于回答：
+
+```text
+PINN residual 在哪些 bucket 改善，哪些 bucket 劣化？
+```
+
+`gate_select` 用于回答：
+
+```text
+只用 truth-free 特征，在 val split 上选择门控规则；
+规则锁定后再评估 test split；
+test 不参与规则选择。
+```
+
+### 18.2 regime audit 结论
+
+原始全点 residual correction 的主要问题不是完全无信号，而是 regime 不稳定。
+
+改善更明显的 bucket：
+
+```text
+context_count_bin=ctx0
+representation_risk_score roughly 0.20-0.35
+truth_speed 60mps_plus_extreme
+altitude 9-12km / 12km_plus
+non-pred-light strong/tail cases
+```
+
+劣化更明显的 bucket：
+
+```text
+pred_light_wind=true
+truth_speed 5-15mps_light
+truth_speed 15-30mps_moderate 的一部分
+altitude 6-9km
+representation_risk_score 0.10-0.20
+sigma_rep_proxy 5-10mps
+role_gap 10-20mps
+```
+
+因此 Stage5 residual PINN 不应全点启用。正确方向是：
+
+```text
+tp26 remains baseline.
+Stage5 residual only acts as a small, truth-free, regime-gated correction.
+Light-wind and floor10-sensitive regimes default protected.
+```
+
+### 18.3 broad gate selection 结果
+
+先用 broad candidate pool 在 val 上按最大 RMSE 改善选门控。
+
+`delta_cap_mps=1.0`：
+
+```text
+selected rule = risk_ge_0p2_or_pred30_not_light
+scale = 1.0
+val:  RMSE 8.617390 -> 8.603763, POINT_REPORT_OVERALL PASS
+test: RMSE 24.379357 -> 24.362418, but P95/floor10 FAIL
+```
+
+`delta_cap_mps=3.0`：
+
+```text
+selected rule = risk_ge_0p3_or_pred30_not_light
+scale = 0.75
+val:  RMSE 8.617390 -> 8.586695, POINT_REPORT_OVERALL PASS
+test: RMSE 24.379357 -> 24.337143, but P95/floor10 FAIL
+```
+
+结论：
+
+```text
+broad pool 会倾向启用 pred_speed>=30mps 的中等风点。
+这能降低 RMSE，但仍会污染 test P95/floor10。
+不适合作为 field_v1 前置门控。
+```
+
+### 18.4 tail_safe + promotion_safe 结果
+
+随后使用更保守的 `tail_safe` rule profile：
+
+```text
+排除 pred_light_wind；
+排除 pred30 中风扩张；
+只允许 pred_speed>=45mps 或中高 representation risk 的小范围 residual。
+```
+
+并使用 `promotion_safe` selection policy：
+
+```text
+仍只看 val；
+候选必须 val guardrail PASS 且 val RMSE 改善；
+在保留至少 50% val RMSE 改善的候选中，优先选择更小 residual scale 和更好的 val floor10 margin。
+```
+
+`delta_cap_mps=1.0` promote-safe locked result：
+
+```text
+selected rule = risk_ge_0p2_or_pred45_not_light
+scale = 0.50
+val enabled points = 18 / 86
+test enabled points = 18 / 63
+
+val:
+  RMSE 8.617390 -> 8.614037
+  P95 16.937550 -> 16.937550
+  P99 35.747789 -> 35.747418
+  light RMSE 4.799782 -> 4.798943
+  floor10 0.273249 -> 0.273137
+  POINT_REPORT_OVERALL PASS
+
+locked test:
+  RMSE 24.379357 -> 24.367270
+  P95 11.790345 -> 11.790345
+  P99 105.904655 -> 105.844654
+  light RMSE 3.420118 -> 3.420118
+  floor10 0.162625 -> 0.162602
+  POINT_REPORT_OVERALL PASS
+```
+
+`delta_cap_mps=3.0` promote-safe locked result：
+
+```text
+selected rule = risk_ge_0p3_or_pred45_not_light
+scale = 0.25
+val enabled points = 8 / 86
+test enabled points = 12 / 63
+
+val:
+  RMSE 8.617390 -> 8.612720
+  P95 16.937550 -> 16.937550
+  P99 35.747789 -> 35.747585
+  light RMSE 4.799782 -> 4.798463
+  floor10 0.273249 -> 0.273079
+  POINT_REPORT_OVERALL PASS
+
+locked test:
+  RMSE 24.379357 -> 24.362658
+  P95 11.790345 -> 11.790345
+  P99 105.904655 -> 105.807634
+  light RMSE 3.420118 -> 3.420118
+  floor10 0.162625 -> 0.162489
+  POINT_REPORT_OVERALL PASS
+```
+
+报告输出：
+
+```text
+centralized_v1_output/stage5_residual_pinn_report_v1_20260608/regime_audit_cap1/
+centralized_v1_output/stage5_residual_pinn_report_v1_20260608/regime_audit_cap3/
+centralized_v1_output/stage5_residual_pinn_report_v1_20260608/gate_select_tail_safe_promote_cap1/
+centralized_v1_output/stage5_residual_pinn_report_v1_20260608/gate_select_tail_safe_promote_cap3/
+```
+
+### 18.5 当前判断
+
+`tail_safe + promotion_safe` 已经让 point-level locked test 通过 guardrail，但改善幅度很小：
+
+```text
+cap1 test RMSE delta = -0.012087 m/s
+cap3 test RMSE delta = -0.016699 m/s
+```
+
+因此当前结论是：
+
+```text
+可以进入 field_v1 smoke 试制；
+不能宣布替代 tp26；
+不能把 Stage5 设为默认；
+field_v1 必须继续过 full-field smoke、200-frame strict holdout pairwise、P95/P99/light/floor10 全 guardrail。
+```
+
+推荐先做：
+
+```text
+tp26_residual_pinn_field_v1_tail_safe_smoke
+  use cap1 or cap3 checkpoint only through selected truth-free gate
+  write 2-5 frame NPZ smoke first
+  compare Stage4 tp26 vs Stage5 gated field at aircraft holdout points
+  verify no light/floor10/P95 regressions
+```
+
+如果 smoke 通过，再扩展到 200-frame formal candidate。
