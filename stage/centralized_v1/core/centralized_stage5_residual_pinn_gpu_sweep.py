@@ -142,7 +142,8 @@ def _run_gate(
     log_dir: Path,
     candidate: Candidate,
 ) -> dict[str, Any]:
-    train_dir = out_root / f"train_{candidate.name}"
+    train_root = args.train_root or out_root
+    train_dir = train_root / f"train_{candidate.name}"
     gate_dir = out_root / f"gate_{candidate.name}"
     cmd = [
         python_bin,
@@ -163,6 +164,8 @@ def _run_gate(
         str(args.selection_policy),
         "--promotion-safe-retain-fraction",
         str(args.promotion_safe_retain_fraction),
+        "--max-enabled-fraction",
+        str(args.max_enabled_fraction),
         "--min-enabled",
         str(args.min_enabled),
         "--min-rmse-gain",
@@ -222,6 +225,13 @@ def _write_report(path: Path, dataset_summary: dict[str, Any], rows: list[dict[s
         f"- one training process per listed GPU by default",
         f"- CUDA_VISIBLE_DEVICES is set per process so each candidate sees one RTX 4090 as `cuda:0`",
         "",
+        "## Gate Policy",
+        "",
+        f"- rule profile: `{args.rule_profile}`",
+        f"- selection policy: `{args.selection_policy}`",
+        f"- promotion-safe retain fraction: `{args.promotion_safe_retain_fraction:.3f}`",
+        f"- max enabled fraction: `{args.max_enabled_fraction:.3f}`",
+        "",
         "## Ranking",
         "",
         "| candidate | cap | seed | gate | scale | test enabled | raw test dRMSE | gated test dRMSE | dP95 | dP99 | dLight | dFloor10 | test gate |",
@@ -255,6 +265,7 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--out-root", type=Path, required=True)
     parser.add_argument("--dataset-dir", type=Path, default=None)
+    parser.add_argument("--train-root", type=Path, default=None)
     parser.add_argument("--force-rebuild-dataset", action="store_true")
     parser.add_argument("--python-bin", default=sys.executable)
     parser.add_argument("--gpu-ids", default="0,1,2")
@@ -272,11 +283,13 @@ def main() -> None:
     parser.add_argument("--omp-threads", type=int, default=8)
     parser.add_argument("--train-fraction", type=float, default=0.70)
     parser.add_argument("--val-fraction", type=float, default=0.15)
-    parser.add_argument("--rule-profile", choices=["broad", "tail_safe"], default="tail_safe")
-    parser.add_argument("--selection-policy", choices=["best_rmse", "promotion_safe"], default="promotion_safe")
+    parser.add_argument("--rule-profile", choices=["broad", "tail_safe", "narrow_safe"], default="tail_safe")
+    parser.add_argument("--selection-policy", choices=["best_rmse", "promotion_safe", "stable_safe"], default="promotion_safe")
     parser.add_argument("--promotion-safe-retain-fraction", type=float, default=0.50)
+    parser.add_argument("--max-enabled-fraction", type=float, default=1.0)
     parser.add_argument("--min-enabled", type=int, default=10)
     parser.add_argument("--min-rmse-gain", type=float, default=0.0)
+    parser.add_argument("--gate-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -297,6 +310,7 @@ def main() -> None:
     manifest = {
         "point_departures": str(args.point_departures),
         "dataset_dir": str(dataset_dir),
+        "train_root": str(args.train_root or out_root),
         "out_root": str(out_root),
         "gpu_ids": gpu_ids,
         "caps": caps,
@@ -307,6 +321,8 @@ def main() -> None:
         "batch_size": int(args.batch_size),
         "rule_profile": str(args.rule_profile),
         "selection_policy": str(args.selection_policy),
+        "max_enabled_fraction": float(args.max_enabled_fraction),
+        "gate_only": bool(args.gate_only),
         "candidates": [candidate.name for candidate in candidates],
     }
     (out_root / "sweep_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -320,10 +336,24 @@ def main() -> None:
     _build_dataset(args, python_bin, dataset_dir, log_dir)
     dataset_summary = _load_json(dataset_dir / "dataset_summary.json")
 
-    pending = list(candidates)
+    pending = [] if bool(args.gate_only) else list(candidates)
     running: dict[subprocess.Popen[bytes], tuple[Candidate, int]] = {}
-    complete: list[Candidate] = []
-    failed: list[tuple[Candidate, int]] = []
+    if bool(args.gate_only):
+        train_root = args.train_root or out_root
+        complete = [
+            candidate
+            for candidate in candidates
+            if (train_root / f"train_{candidate.name}" / "predictions_all.csv").exists()
+        ]
+        missing = [
+            candidate
+            for candidate in candidates
+            if not (train_root / f"train_{candidate.name}" / "predictions_all.csv").exists()
+        ]
+        failed: list[tuple[Candidate, int]] = [(candidate, 127) for candidate in missing]
+    else:
+        complete = []
+        failed = []
     next_gpu = 0
     while pending or running:
         while pending and len(running) < len(gpu_ids):

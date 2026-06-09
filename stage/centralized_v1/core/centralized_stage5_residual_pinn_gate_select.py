@@ -182,13 +182,24 @@ def _build_rules() -> list[RuleSpec]:
         )
         & (~_bool_series(_num(df, "pred_light_wind_flag", 0.0))),
     )
+    for gap in (10.0, 20.0, 30.0):
+        add(
+            f"vertical_gap_ge{int(gap)}_not_light",
+            f"Enable where vertical gap/jump proxy >= {gap:.0f} m/s and not pred-light.",
+            2,
+            lambda df, gap=gap: (
+                np.maximum(_num(df, "vertical_speed_gap_mps", 0.0), _num(df, "recon_vertical_jump_mps", 0.0))
+                >= gap
+            )
+            & (~_bool_series(_num(df, "pred_light_wind_flag", 0.0))),
+        )
     return rules
 
 
 def _profile_accepts(rule_name: str, profile: str) -> bool:
     if profile == "broad":
         return True
-    if profile != "tail_safe":
+    if profile not in {"tail_safe", "narrow_safe"}:
         raise ValueError(f"Unsupported rule profile: {profile}")
     if rule_name in {"all_points", "not_pred_light"}:
         return False
@@ -200,6 +211,15 @@ def _profile_accepts(rule_name: str, profile: str) -> bool:
         return False
     if rule_name.startswith("risk_ge_") and not rule_name.endswith("_not_light") and "_or_pred45_not_light" not in rule_name:
         return False
+    if profile == "narrow_safe":
+        if "_or_pred" in rule_name or "_or_alt" in rule_name:
+            return False
+        if rule_name.startswith("pred_speed_ge_"):
+            return rule_name in {"pred_speed_ge_45_not_light", "pred_speed_ge_60_not_light"}
+        if rule_name in {"risk_ge_0p1", "risk_ge_0p1_not_light"} or rule_name.startswith("risk_ge_0p1_or_"):
+            return False
+        if rule_name.startswith("risk_ge_") and not rule_name.endswith("_not_light"):
+            return False
     return True
 
 
@@ -365,6 +385,7 @@ def _write_report(
     min_rmse_gain: float,
     selection_policy: str,
     retain_fraction: float,
+    max_enabled_fraction: float,
 ) -> None:
     lines = [
         "# Stage5 Residual PINN Truth-Free Gate Selection",
@@ -380,6 +401,7 @@ def _write_report(
         f"- selected by: `{selection_split}` guardrail pass and RMSE gain > `{min_rmse_gain:.6f}`",
         f"- selection policy: `{selection_policy}`",
         f"- promotion-safe retain fraction: `{retain_fraction:.3f}`",
+        f"- max enabled fraction: `{max_enabled_fraction:.3f}`",
         "",
         "## Locked Metrics",
         "",
@@ -456,9 +478,10 @@ def main() -> None:
     parser.add_argument("--selection-split", choices=["train", "val"], default="val")
     parser.add_argument("--evaluation-split", choices=["val", "test"], default="test")
     parser.add_argument("--scales", default="0.25,0.5,0.75,1.0")
-    parser.add_argument("--rule-profile", choices=["broad", "tail_safe"], default="broad")
-    parser.add_argument("--selection-policy", choices=["best_rmse", "promotion_safe"], default="best_rmse")
+    parser.add_argument("--rule-profile", choices=["broad", "tail_safe", "narrow_safe"], default="broad")
+    parser.add_argument("--selection-policy", choices=["best_rmse", "promotion_safe", "stable_safe"], default="best_rmse")
     parser.add_argument("--promotion-safe-retain-fraction", type=float, default=0.50)
+    parser.add_argument("--max-enabled-fraction", type=float, default=1.0)
     parser.add_argument("--min-enabled", type=int, default=3)
     parser.add_argument("--min-rmse-gain", type=float, default=0.0)
     parser.add_argument("--tolerance", type=float, default=1e-9)
@@ -507,13 +530,44 @@ def main() -> None:
                 ["scale", "selection_delta_floor10", "complexity", "selection_delta_rmse", "selection_enabled_points"],
                 ascending=[True, True, True, True, False],
             )
+        elif str(args.selection_policy) == "stable_safe":
+            eligible["selection_enabled_fraction"] = eligible["selection_enabled_points"] / eligible["selection_points"].clip(lower=1)
+            eligible = eligible[eligible["selection_enabled_fraction"] <= float(args.max_enabled_fraction)].copy()
+            if eligible.empty:
+                selected_row = cand_df[cand_df["rule_name"] == "baseline_no_stage5"].iloc[0].to_dict()
+                selected_description = "No stable-safe validation gate survived coverage filtering; keep tp26 unchanged."
+                eligible = None
+            else:
+                best_delta = float(eligible["selection_delta_rmse"].min())
+                keep_threshold = best_delta * float(args.promotion_safe_retain_fraction)
+                eligible = eligible[eligible["selection_delta_rmse"] <= keep_threshold].copy()
+                eligible["selection_tail_margin"] = (
+                    eligible["selection_delta_p99"].clip(upper=0.0)
+                    + eligible["selection_delta_light_rmse"].clip(upper=0.0)
+                    + eligible["selection_delta_light_mae"].clip(upper=0.0)
+                    + eligible["selection_delta_floor10"].clip(upper=0.0)
+                )
+                eligible = eligible.sort_values(
+                    [
+                        "selection_enabled_fraction",
+                        "selection_delta_floor10",
+                        "selection_delta_light_rmse",
+                        "selection_delta_p99",
+                        "scale",
+                        "selection_delta_rmse",
+                    ],
+                    ascending=[True, True, True, True, True, True],
+                )
+                selected_row = eligible.iloc[0].to_dict()
+                selected_description = str(selected_row["description"])
         else:
             eligible = eligible.sort_values(
                 ["selection_delta_rmse", "complexity", "selection_enabled_points", "scale"],
                 ascending=[True, True, False, True],
             )
-        selected_row = eligible.iloc[0].to_dict()
-        selected_description = str(selected_row["description"])
+        if str(args.selection_policy) != "stable_safe":
+            selected_row = eligible.iloc[0].to_dict()
+            selected_description = str(selected_row["description"])
 
     selected_rule = next((rule for rule in _build_rules() if rule.name == selected_row["rule_name"]), baseline_rule)
     selected_enabled = selected_rule.mask_fn(df).fillna(False).to_numpy(dtype=bool)
@@ -539,6 +593,7 @@ def main() -> None:
         "rule_profile": str(args.rule_profile),
         "selection_policy": str(args.selection_policy),
         "promotion_safe_retain_fraction": float(args.promotion_safe_retain_fraction),
+        "max_enabled_fraction": float(args.max_enabled_fraction),
         "test_not_used_for_selection": str(args.evaluation_split) == "test",
         "split_rows": selected_rows,
     }
@@ -554,6 +609,7 @@ def main() -> None:
         float(args.min_rmse_gain),
         str(args.selection_policy),
         float(args.promotion_safe_retain_fraction),
+        float(args.max_enabled_fraction),
     )
     print(args.out_dir / "gate_selection_report.md")
 

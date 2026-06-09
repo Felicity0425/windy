@@ -1592,3 +1592,173 @@ selected_gate is truth-free and fixed from val
 ```
 
 smoke 通过后，再扩展到 full 200-frame / 5614-frame pairwise gate。默认产品仍保持 Stage4 `tp26_thr11_preserve`，直到 full-field formal gate 通过。
+
+## 20. 2026-06-09 full-data sweep 结果后的 gate 修正
+
+full-data GPU sweep 生产结果位置：
+
+```text
+centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_20260609/
+```
+
+原始 `tail_safe + promotion_safe` 结果：
+
+```text
+9 个 cap/seed 候选均成功训练，无失败进程。
+训练使用 CUDA，日志按 GPU 0/1/2 分配。
+point-level 数据集为 5614 frames / 15054 points。
+```
+
+但自动选择的非零 Stage5 gate 候选没有通过 locked test 全 guardrail。主要失败项：
+
+```text
+light RMSE / light MAE regression
+floor10 regression
+P99 regression
+个别候选 P95 regression
+```
+
+诊断发现：候选池里存在可以通过 locked test 的窄门控规则，但原 selection policy 偏好过宽规则，例如：
+
+```text
+risk_ge_0p1_or_alt12_not_light
+risk_ge_0p1_or_pred45_not_light
+```
+
+这些规则覆盖 1000+ test points，RMSE 会下降，但会污染 light/floor10/P99。
+
+### 20.1 代码修正
+
+新增 `narrow_safe` rule profile：
+
+```text
+禁用 all_points / not_pred_light
+禁用 alt_ge / high_altitude-only 规则
+禁用 pred15/pred20/pred30
+禁用 risk OR pred30/pred45/alt12 的宽覆盖规则
+保留 risk_ge_*_not_light
+保留 risk_0p20_to_0p50_not_light
+保留 vertical_gap_ge10/15/20/30_not_light
+保留 pred_speed_ge45/60_not_light
+保留 role_gap/sigma_rep 窄规则
+```
+
+新增 `stable_safe` selection policy：
+
+```text
+仍只用 val split 选择；
+候选必须 val guardrail PASS；
+候选必须 val RMSE 改善；
+候选必须满足 min_enabled；
+候选 val enabled fraction 必须 <= max_enabled_fraction；
+在保留一定 val RMSE 改善的候选中，优先小覆盖、小 floor10/light/P99 风险。
+```
+
+新增 sweep 参数：
+
+```text
+--rule-profile narrow_safe
+--selection-policy stable_safe
+--max-enabled-fraction 0.35
+--gate-only
+--train-root
+```
+
+`--gate-only` 可直接复用已训练 checkpoint，只重新跑 gate selection，不重新训练。
+
+### 20.2 gate-only 复评命令
+
+```bash
+cd /data/LFT-W02_data/pengxu
+/data/LFT-W02_data/pengxu/.conda/envs/windy310/bin/python \
+  stage/centralized_v1/core/centralized_stage5_residual_pinn_gpu_sweep.py \
+  --point-departures centralized_v1_output/stage4_full_tp26_thr11_preserve_25w_taildiag_20260602_173319/stage4_point_departures.csv \
+  --dataset-dir centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_20260609/dataset_full_tp26 \
+  --train-root centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_20260609 \
+  --out-root centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_narrow_gate_20260609 \
+  --gpu-ids 0,1,2 \
+  --caps 0.5,1.0,3.0 \
+  --seeds 20260608,20260609,20260610 \
+  --width 512 \
+  --layers 6 \
+  --rule-profile narrow_safe \
+  --selection-policy stable_safe \
+  --promotion-safe-retain-fraction 0.50 \
+  --max-enabled-fraction 0.35 \
+  --min-enabled 10 \
+  --gate-only
+```
+
+复评输出：
+
+```text
+centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_narrow_gate_20260609/
+```
+
+### 20.3 narrow/stable 复评结果
+
+通过的非零 Stage5 候选：
+
+```text
+candidate = cap1p0_seed20260609_w512_l6
+gate = vertical_gap_ge20_not_light
+scale = 1.0
+test enabled = 33 / 1893
+
+raw test delta RMSE = -0.004006
+gated test delta RMSE = -0.004433
+dP95 = -0.119179
+dP99 = -0.035294
+dLight = +0.000000
+dFloor10 = -0.000029
+locked test guardrail = PASS
+```
+
+这是真正的非零 residual correction，通过 locked test guardrail，但覆盖范围很窄，改善幅度也很小。因此结论是：
+
+```text
+Stage5 residual PINN 可以进入 field_v1 smoke；
+只允许用 cap1p0_seed20260609 checkpoint；
+只允许用 vertical_gap_ge20_not_light truth-free gate；
+Stage5 仍不能替代 tp26；
+Stage5 不能设为默认。
+```
+
+### 20.4 从头重训 + 新策略命令
+
+如果要从头重训并直接使用新 gate 策略：
+
+```bash
+cd /data/LFT-W02_data/pengxu
+sudo nvidia-modprobe -u -c=0
+nvidia-smi
+
+/data/LFT-W02_data/pengxu/.conda/envs/windy310/bin/python \
+  stage/centralized_v1/core/centralized_stage5_residual_pinn_gpu_sweep.py \
+  --point-departures centralized_v1_output/stage4_full_tp26_thr11_preserve_25w_taildiag_20260602_173319/stage4_point_departures.csv \
+  --out-root centralized_v1_output/stage5_residual_pinn_full_tp26_gpu_sweep_narrow_train_20260609 \
+  --gpu-ids 0,1,2 \
+  --caps 0.5,1.0,3.0 \
+  --seeds 20260608,20260609,20260610 \
+  --width 512 \
+  --layers 6 \
+  --batch-size 2048 \
+  --max-epochs 1200 \
+  --patience 160 \
+  --learning-rate 8e-4 \
+  --rule-profile narrow_safe \
+  --selection-policy stable_safe \
+  --promotion-safe-retain-fraction 0.50 \
+  --max-enabled-fraction 0.35 \
+  --min-enabled 10
+```
+
+下一步建议做：
+
+```text
+field_v1 smoke on 2-5 representative frames
+candidate checkpoint: train_cap1p0_seed20260609_w512_l6/checkpoint.pt
+gate rule: vertical_gap_ge20_not_light
+write Stage5 = Stage4 tp26 + selected_gate * residual_delta
+evaluate aircraft holdout point pairs before any full-field promotion
+```
