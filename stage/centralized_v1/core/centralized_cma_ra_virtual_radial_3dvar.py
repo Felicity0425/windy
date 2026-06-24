@@ -1033,10 +1033,16 @@ def _parse_frame_times(text: str) -> list[str]:
 def _read_frame_times_file(path: Path | None) -> list[str]:
     if path is None:
         return []
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError(f"Frame times file must contain a JSON list: {path}")
-    return [str(item) for item in payload]
+    text = path.read_text(encoding="utf-8")
+    stripped = text.strip()
+    if not stripped:
+        return []
+    if stripped.startswith("["):
+        payload = json.loads(stripped)
+        if not isinstance(payload, list):
+            raise ValueError(f"Frame times file must contain a JSON list or one frame time per line: {path}")
+        return [str(item).strip() for item in payload if str(item).strip()]
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 
 def _write_shard_frame_times(path: Path, frame_times: list[str]) -> None:

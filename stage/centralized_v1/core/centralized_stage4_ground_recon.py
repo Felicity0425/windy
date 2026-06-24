@@ -3242,6 +3242,7 @@ def _leakage_report(
     context_motion_records: list[dict[str, Any]],
     cma_fusion_mode: str = "off",
     cma_proxy_npz: str = "",
+    background_independent_of_holdout: str = "unknown",
 ) -> dict[str, Any]:
     wind_ids = {_record_identity(row) for row in wind_records}
     train_ids = {_record_identity(row) for row in train_wind}
@@ -3262,6 +3263,8 @@ def _leakage_report(
         "cma_fusion_mode": str(cma_fusion_mode),
         "cma_proxy_npz": str(cma_proxy_npz),
         "cma_used_as_background_not_truth": bool(str(cma_fusion_mode) != "off"),
+        "background_independent_of_holdout": str(background_independent_of_holdout),
+        "background_independence_confirmed": str(background_independent_of_holdout).lower() == "true",
     }
     report["strict_holdout_no_leakage"] = bool(
         report["holdout_from_wind_records"]
@@ -3994,6 +3997,7 @@ def process_frame(
     cma_space_confidence: float,
     cma_pseudo_source: str,
     cma_qc_gating: str,
+    background_independent_of_holdout: str,
     display_fill_mode: str,
     display_fill_cma_proxy_dir: Path | None,
     display_fill_source: str,
@@ -4130,6 +4134,7 @@ def process_frame(
         context_motion_records=context_motion_records,
         cma_fusion_mode=cma_fusion_mode,
         cma_proxy_npz=str(cma_path or ""),
+        background_independent_of_holdout=background_independent_of_holdout,
     )
     recon = _make_reconstruction(acc)
     recon = _cap_cma_only_confidence(recon, acc, cma_confidence_cap=float(cma_confidence_cap))
@@ -4293,6 +4298,7 @@ def process_frame(
         "cma_space_confidence": float(cma_space_confidence),
         "cma_pseudo_source": str(cma_pseudo_source),
         "cma_qc_gating": str(cma_qc_gating),
+        "background_independent_of_holdout": str(background_independent_of_holdout),
         "display_fill_mode": str(display_fill_mode),
         "display_fill_cma_proxy_dir": str(display_fill_cma_proxy_dir or ""),
         "display_fill_source": str(display_fill_source),
@@ -4481,6 +4487,8 @@ def process_frame(
         "cma_confidence_cap": float(cma_confidence_cap),
         "cma_pseudo_source": str(cma_pseudo_source),
         "cma_qc_gating": str(cma_qc_gating),
+        "background_independent_of_holdout": str(background_independent_of_holdout),
+        "background_independence_confirmed": str(background_independent_of_holdout).lower() == "true",
         "confidence_diagnostics": confidence_diagnostics,
         "cma_fusion_diagnostics": cma_fusion_diagnostics,
         "leakage_report": leakage_report,
@@ -4500,10 +4508,16 @@ def _write_shard_frame_times(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def _read_frame_times_file(path: Path) -> str:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError(f"Stage4 frame-times-file must contain a JSON list: {path}")
-    return ",".join(str(item) for item in payload)
+    text = path.read_text(encoding="utf-8")
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    if stripped.startswith("["):
+        payload = json.loads(stripped)
+        if not isinstance(payload, list):
+            raise ValueError(f"Stage4 frame-times-file must contain a JSON list or one frame time per line: {path}")
+        return ",".join(str(item).strip() for item in payload if str(item).strip())
+    return ",".join(line.strip() for line in text.splitlines() if line.strip())
 
 
 def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -4615,6 +4629,8 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.cma_pseudo_source),
             "--cma-qc-gating",
             str(args.cma_qc_gating),
+            "--background-independent-of-holdout",
+            str(args.background_independent_of_holdout),
             "--display-fill-mode",
             str(args.display_fill_mode),
             "--display-fill-cma-proxy-dir",
@@ -4705,6 +4721,11 @@ def main() -> None:
     parser.add_argument("--cma-space-confidence", type=float, default=0.70)
     parser.add_argument("--cma-pseudo-source", choices=sorted(CMA_PSEUDO_SOURCES), default="reanalysis")
     parser.add_argument("--cma-qc-gating", choices=sorted(CMA_QC_GATING_MODES), default="off")
+    parser.add_argument(
+        "--background-independent-of-holdout",
+        choices=["true", "false", "unknown"],
+        default="unknown",
+    )
     parser.add_argument("--display-fill-mode", choices=sorted(DISPLAY_FILL_MODES), default="off")
     parser.add_argument(
         "--display-fill-cma-proxy-dir",
@@ -4791,6 +4812,7 @@ def main() -> None:
                 cma_space_confidence=float(args.cma_space_confidence),
                 cma_pseudo_source=str(args.cma_pseudo_source),
                 cma_qc_gating=str(args.cma_qc_gating),
+                background_independent_of_holdout=str(args.background_independent_of_holdout),
                 display_fill_mode=str(args.display_fill_mode),
                 display_fill_cma_proxy_dir=args.display_fill_cma_proxy_dir,
                 display_fill_source=str(args.display_fill_source),

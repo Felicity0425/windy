@@ -262,6 +262,7 @@ def _evaluate_metrics_only(
     cma_space_confidence: float = 0.70,
     cma_pseudo_source: str = "reanalysis",
     cma_qc_gating: str = "off",
+    background_independent_of_holdout: str = "unknown",
 ) -> dict[str, Any]:
     npz_path = Path(stage2_row["multimodal_vox_path"])
     if not npz_path.is_absolute():
@@ -395,6 +396,7 @@ def _evaluate_metrics_only(
         context_motion_records=context_motion_records,
         cma_fusion_mode=cma_fusion_mode,
         cma_proxy_npz=str(cma_path or ""),
+        background_independent_of_holdout=background_independent_of_holdout,
     )
     recon = _make_reconstruction(acc)
     recon = _cap_cma_only_confidence(recon, acc, cma_confidence_cap=float(cma_confidence_cap))
@@ -609,6 +611,7 @@ def _evaluate_metrics_only(
         "cma_space_confidence": float(cma_space_confidence),
         "cma_pseudo_source": str(cma_pseudo_source),
         "cma_qc_gating": str(cma_qc_gating),
+        "background_independent_of_holdout": str(background_independent_of_holdout),
         "cma_temporal_conf_mean": float(cma_fusion_diagnostics.get("cma_temporal_conf_mean", 0.0)),
         "cma_temporal_change_speed_mean_mps": float(cma_fusion_diagnostics.get("cma_temporal_change_speed_mean_mps", 0.0)),
         "cma_rapid_change_fraction": float(cma_fusion_diagnostics.get("cma_rapid_change_fraction", 0.0)),
@@ -1214,6 +1217,8 @@ def _run_parent_shards(
             str(args.cma_pseudo_source),
             "--cma-qc-gating",
             str(args.cma_qc_gating),
+            "--background-independent-of-holdout",
+            str(args.background_independent_of_holdout),
             "--progress-interval-seconds",
             str(args.progress_interval_seconds),
             "--num-workers",
@@ -1304,6 +1309,11 @@ def main() -> None:
     parser.add_argument("--cma-space-confidence", type=float, default=0.70)
     parser.add_argument("--cma-pseudo-source", choices=sorted(CMA_PSEUDO_SOURCES), default="reanalysis")
     parser.add_argument("--cma-qc-gating", choices=sorted(CMA_QC_GATING_MODES), default="off")
+    parser.add_argument(
+        "--background-independent-of-holdout",
+        choices=["true", "false", "unknown"],
+        default="unknown",
+    )
     parser.add_argument("--progress-interval-seconds", type=float, default=10.0)
     parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--shard-id", type=int, default=-1)
@@ -1385,6 +1395,7 @@ def main() -> None:
                             cma_space_confidence=float(args.cma_space_confidence),
                             cma_pseudo_source=str(args.cma_pseudo_source),
                             cma_qc_gating=str(args.cma_qc_gating),
+                            background_independent_of_holdout=str(args.background_independent_of_holdout),
                         )
                     )
                     done += 1
@@ -1452,6 +1463,7 @@ def main() -> None:
         "cma_space_confidence": float(args.cma_space_confidence),
         "cma_pseudo_source": str(args.cma_pseudo_source),
         "cma_qc_gating": str(args.cma_qc_gating),
+        "background_independent_of_holdout": str(args.background_independent_of_holdout),
         "qc_calibration": qc_calibration,
         "output_csv": str(csv_path),
         "output_md": str(md_path),
