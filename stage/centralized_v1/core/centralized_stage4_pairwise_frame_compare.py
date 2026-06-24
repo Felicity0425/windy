@@ -454,7 +454,10 @@ def _promotion_checklist(
     wind_method_rows: list[dict[str, Any]],
     baseline_label: str,
     candidate_label: str,
+    tolerance: float,
 ) -> list[dict[str, Any]]:
+    tol = float(tolerance)
+
     def row(name: str, baseline: float | str | bool, candidate: float | str | bool, passed: bool, detail: str = "") -> dict[str, Any]:
         return {
             "gate": name,
@@ -471,7 +474,7 @@ def _promotion_checklist(
     def no_worse_gate(gate: str, base_key: str, cand_key: str) -> None:
         base = _to_float(summary, base_key, float("nan"))
         cand = _to_float(summary, cand_key, float("nan"))
-        rows.append(row(gate, base, cand, math.isfinite(base) and math.isfinite(cand) and cand <= base))
+        rows.append(row(gate, base, cand, math.isfinite(base) and math.isfinite(cand) and cand <= base + tol, f"tolerance={tol:g}"))
 
     no_worse_gate("weighted_rmse_no_worse", f"{baseline_label}_weighted_rmse", f"{candidate_label}_weighted_rmse")
     no_worse_gate("frame_p95_no_worse", "p95_baseline_rmse", "p95_candidate_rmse")
@@ -479,7 +482,15 @@ def _promotion_checklist(
 
     base_12 = _method_group_lookup(wind_method_rows, baseline_label, "altitude", "12km+", "vector_rmse_mps")
     cand_12 = _method_group_lookup(wind_method_rows, candidate_label, "altitude", "12km+", "vector_rmse_mps")
-    rows.append(row("alt_12km_plus_vector_rmse_no_worse", base_12, cand_12, math.isfinite(base_12) and math.isfinite(cand_12) and cand_12 <= base_12))
+    rows.append(
+        row(
+            "alt_12km_plus_vector_rmse_no_worse",
+            base_12,
+            cand_12,
+            math.isfinite(base_12) and math.isfinite(cand_12) and cand_12 <= base_12 + tol,
+            f"tolerance={tol:g}",
+        )
+    )
 
     for metric in ["vector_rmse_mps", "vector_mae_mps"]:
         base_light = _method_group_lookup(wind_method_rows, baseline_label, "speed", "5-15mps_light", metric)
@@ -489,7 +500,8 @@ def _promotion_checklist(
                 f"light_wind_{metric}_no_worse",
                 base_light,
                 cand_light,
-                math.isfinite(base_light) and math.isfinite(cand_light) and cand_light <= base_light,
+                math.isfinite(base_light) and math.isfinite(cand_light) and cand_light <= base_light + tol,
+                f"tolerance={tol:g}",
             )
         )
 
@@ -500,7 +512,8 @@ def _promotion_checklist(
             "floor10_relative_error_mae_no_worse",
             base_floor,
             cand_floor,
-            math.isfinite(base_floor) and math.isfinite(cand_floor) and cand_floor <= base_floor,
+            math.isfinite(base_floor) and math.isfinite(cand_floor) and cand_floor <= base_floor + tol,
+            f"tolerance={tol:g}",
         )
     )
 
@@ -667,6 +680,7 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--out-prefix", default="stage4_pairwise")
     parser.add_argument("--top-n", type=int, default=20)
+    parser.add_argument("--promotion-tolerance", type=float, default=1e-9)
     args = parser.parse_args()
 
     baseline = _unique_by_time(_read_csv(args.baseline_csv), args.baseline_label)
@@ -712,7 +726,14 @@ def main() -> None:
             args.candidate_label,
         )
         wind_method_rows, wind_delta_rows = _wind_scale_groups(paper_merged, args.baseline_label, args.candidate_label)
-        promotion_checklist = _promotion_checklist(summary, paper_merged, wind_method_rows, args.baseline_label, args.candidate_label)
+        promotion_checklist = _promotion_checklist(
+            summary,
+            paper_merged,
+            wind_method_rows,
+            args.baseline_label,
+            args.candidate_label,
+            float(args.promotion_tolerance),
+        )
     top_n = max(1, int(args.top_n))
     top_wins = sorted(rows, key=lambda row: float(row["delta_rmse_candidate_minus_baseline"]))[:top_n]
     top_losses = sorted(rows, key=lambda row: float(row["delta_rmse_candidate_minus_baseline"]), reverse=True)[:top_n]
