@@ -1,0 +1,56 @@
+{
+  "experiment_id": "stage45_s4a_metrics_200_25w_20260614",
+  "frames": 200,
+  "workers": 25,
+  "npz_written": 0,
+  "baseline": {
+    "label": "tp26",
+    "frame_mean_rmse": 8.40372187479239,
+    "frame_mean_mae": 7.200441834053882,
+    "weighted_rmse": 14.868531084096004,
+    "frame_p95_rmse": 27.98963951592178,
+    "frame_p99_rmse": 58.78377017267204,
+    "alt_12km_plus_vector_rmse": 20.01215889399047,
+    "light_wind_vector_rmse": 5.1912373974359465,
+    "floor10_relative_mae": 0.28641134420940795
+  },
+  "candidates": {
+    "s4a_obs_error_downweight_only": {
+      "promotion": "fail",
+      "failed_gates": [
+        "weighted_rmse_no_worse"
+      ],
+      "frame_mean_rmse": 8.400416520398569,
+      "frame_mean_mae": 7.223910182072595,
+      "weighted_rmse": 15.049370865795895,
+      "frame_p95_rmse": 27.97516329898089,
+      "frame_p99_rmse": 58.746096854646275,
+      "alt_12km_plus_vector_rmse": 19.980172732880444,
+      "light_wind_vector_rmse": 5.051847492151737,
+      "floor10_relative_mae": 0.2828871207677611,
+      "interpretation": "weak local signal but global weighted RMSE regression"
+    },
+    "s4a_obs_error_full_weight": {
+      "promotion": "fail",
+      "failed_gates": [
+        "weighted_rmse_no_worse",
+        "alt_12km_plus_vector_rmse_no_worse"
+      ],
+      "frame_mean_rmse": 8.477330248628759,
+      "frame_mean_mae": 7.322167663412715,
+      "weighted_rmse": 15.305641762745875,
+      "frame_p95_rmse": 26.27354696397749,
+      "frame_p99_rmse": 58.5738471499258,
+      "alt_12km_plus_vector_rmse": 20.121954645521893,
+      "light_wind_vector_rmse": 4.992278006490135,
+      "floor10_relative_mae": 0.28515335059083774,
+      "interpretation": "too aggressive; worsens weighted RMSE and 12km+"
+    }
+  },
+  "decision": "do_not_promote_s4a_obs_error_weighted",
+  "recommended_next": [
+    "S4-B constrained localization for role-gap/vertical-gap/high-altitude",
+    "S4-C time-confidence calibration",
+    "optional narrow S4-A gated downweight restricted away from 60mps+ and high-risk altitude bands"
+  ]
+}

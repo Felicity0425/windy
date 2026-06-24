@@ -1,0 +1,49 @@
+{
+  "experiment_id": "stage45_oi_cma_m1_200_25w_20260614",
+  "frame_count": 200,
+  "workers": 25,
+  "smoke": {
+    "status": "passed",
+    "out_dir": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage45_oi_cma_m1_200_25w_20260614/smoke_one_frame_display_fill"
+  },
+  "baseline": {
+    "status": "passed",
+    "out_dir": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage45_oi_cma_m1_200_25w_20260614/baseline_tp26_ground_recon",
+    "display_fill_mode": "off",
+    "strict_holdout_no_leakage_true_count": 200
+  },
+  "m1": {
+    "status": "passed",
+    "out_dir": "/data/LFT-W02_data/pengxu/centralized_v1_output/stage45_oi_cma_m1_200_25w_20260614/s4_cma_m1_display_fill",
+    "display_fill_mode": "low_conf_background",
+    "strict_holdout_no_leakage_true_count": 200,
+    "background_independence_confirmed_true_count": 0
+  },
+  "official_metric_deltas": {
+    "rmse_vector_max_abs_diff": 0.0,
+    "mae_vector_max_abs_diff": 0.0,
+    "bias_u_max_abs_diff": 0.0,
+    "bias_v_max_abs_diff": 0.0,
+    "effective_reconstructed_voxels_max_abs_diff": 0.0,
+    "effective_reconstructed_fraction_max_abs_diff": 0.0,
+    "confidence_active_mean_max_abs_diff": 0.0,
+    "confidence_positive_voxels_max_abs_diff": 0.0,
+    "localized_reconstructed_voxels_max_abs_diff": 0.0,
+    "strict_holdout_no_leakage_max_abs_diff": 0.0
+  },
+  "representative_npz_checks": {
+    "recon_u_3d_max_abs_diff": 0.0,
+    "recon_v_3d_max_abs_diff": 0.0,
+    "recon_confidence_3d_max_abs_diff": 0.0,
+    "recon_mask_3d_max_abs_diff": 0.0
+  },
+  "display_layer": {
+    "baseline_mean_background_voxels": 0.0,
+    "m1_mean_active_voxels": 12613125.0,
+    "m1_mean_background_voxels": 12396298.605
+  },
+  "notes": [
+    "background_independent_of_holdout remains unknown",
+    "background_independence_confirmed is false"
+  ]
+}
