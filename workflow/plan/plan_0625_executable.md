@@ -28,6 +28,9 @@
 | `P0-FLOOR` | 已完成工程版 | [centralized_stage4_error_floor_estimate.py](/data/LFT-W02_data/pengxu/stage/centralized_v1/core/centralized_stage4_error_floor_estimate.py), [stage4_error_floor_estimate.md](/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md) |
 | `S4-CMA-M1` | 已完成轻量 demo | [stage4_cma_m1_light_demo_20260625.sh](/data/LFT-W02_data/pengxu/workflow/plan/stage4_cma_m1_light_demo_20260625.sh), [stage4_cma_m1_light_demo_20260625_summary.md](/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md) |
 | `P0-GFS`(新增) | 已完成 | [download_stage5_gfs_aws_cached_batch.py](/data/LFT-W02_data/pengxu/stage/download_stage5_gfs_aws_cached_batch.py), [stage4_gfs_historical_background_200_20260625.sh](/data/LFT-W02_data/pengxu/workflow/plan/stage4_gfs_historical_background_200_20260625.sh) |
+| `P0-GFS / verify_gfs_background` | 已完成并重跑 21 层最终版 | [verify_gfs_background.py](/data/LFT-W02_data/pengxu/stage/centralized_v1/core/verify_gfs_background.py), [gfs_background_verify_report_200.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/gfs_background_verify_report_200.md) |
+| `S4-OI-DIAG`(GFS) | 已完成 report-only | [centralized_stage4_oi_diag_report.py](/data/LFT-W02_data/pengxu/stage/centralized_v1/core/centralized_stage4_oi_diag_report.py), [s4_oi_diag_gfs_200.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/s4_oi_diag_gfs_200.md) |
+| `P0-ALT12-CUT`(新增) | 已完成 | [centralized_stage4_altitude_cutoff_report.py](/data/LFT-W02_data/pengxu/stage/centralized_v1/core/centralized_stage4_altitude_cutoff_report.py), [stage4_altitude_cutoff_lt12km_baseline_200.md](/data/LFT-W02_data/pengxu/优化/stage4_altitude_cutoff_20260626/reports/stage4_altitude_cutoff_lt12km_baseline_200.md) |
 
 ### 0A.2 当前状态总表（交接时先看这张）
 
@@ -38,9 +41,11 @@
 | `P0-CMA` | 完成 | `773` 文件、`129` 时次、抽样可读 `18/18`，唯一缺口是 `2026022012` 缺 `GPH` |
 | `P0-FLOOR` | 完成（工程版） | baseline `14.7690`，proxy floor `11.1126`，剩余空间 `3.6564 m/s` |
 | `S4-CMA-M1` | 部分完成 | `200` 帧 baseline 已复现；`6` 代表帧 display-only 产品已跑通；full-200 pairwise 封口未做 |
-| `P0-GFS`(新增) | 完成 | `178/178` unique source，`200/200` frame，`failed_count=0` |
-| `S4-OI-DIAG` | 未开始 | 下一步建议改用 `GFS` 背景，而不是继续用 `CMA` 做 OI |
-| `S4-OI-1a/1b/1c/1d` | 未开始 | 依赖 `S4-OI-DIAG` 和 `P0-GFS` 的背景体检 |
+| `P0-GFS`(新增) | 完成并补齐高层 | `178/178` unique source，`200/200` frame，`failed_count=0`，当前 `21` 层、`1000..100 hPa`、顶层约 `15.80 km` |
+| `P0-GFS / verify_gfs_background` | 完成 | `ready_for_s4_oi_diag=true`，`supports_12km_plus=true`，`all_frame_shapes=(21,81,45)` |
+| `S4-OI-DIAG` | 已完成 report-only | `train innovation RMSE=39.34`，`holdout background RMSE=35.23`；`0-3km/3-6km` 条件可用，其余尤其 `12km+` 高风险 |
+| `S4-OI-1a/1b/1c/1d` | 未开始 | 现在已经具备进入 constrained OI 小步实验的前提，但不应直接进 official blend |
+| `P0-ALT12-CUT` | 完成 | `12km+` 占点数 `41.89%`，但占 SSE `76.18%`；若只看 `<12km`，baseline `RMSE 14.77 -> 9.46` |
 | `Stage5` | 未开始 | 仍应等 Stage4 official branch 真正变化并过 gate 后再谈 |
 
 ### 0A.3 当前最重要的 4 个结论
@@ -49,7 +54,7 @@
 1. CMA-RA 已确认是再分析/分析产品，因此可以做 display-only 弱背景补全，但当前不能作为 OI 独立背景。
 2. 200 帧 25 路并行 baseline 已稳定复现，说明这一轮实验口径没有跑歪。
 3. S4-CMA-M1 已跑通“完整风场 + 低置信标注”的产品链路，但还没完成 full-200 pairwise 正式封口。
-4. GFS forecast 历史背景 200 帧已全部下载完成，因此下一步 OI 主线应从 CMA 切到 GFS。
+4. GFS forecast 历史背景不但已下载完成，而且已补齐到 100 hPa / 15.80 km、通过 verify，并完成了 report-only S4-OI-DIAG；结论是“可做 weak/diagnostic background，但不宜直接进 official OI”。
 ```
 
 ### 0A.4 为什么这轮执行顺序和原计划相比有调整
@@ -76,26 +81,31 @@
 4. [stage4_error_floor_estimate.md](/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md)
 5. [m1_promotion_checklist.json](/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/reports/m1_promotion_checklist.json)
 6. [weekly_report_20260625.md](/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md)
+7. [stage4_gfs_oi_diag_20260626_handover_summary.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/stage4_gfs_oi_diag_20260626_handover_summary.md)
+8. [gfs_background_verify_report_200.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/gfs_background_verify_report_200.md)
+9. [s4_oi_diag_gfs_200.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/s4_oi_diag_gfs_200.md)
+10. [stage4_altitude_cutoff_lt12km_baseline_200.md](/data/LFT-W02_data/pengxu/优化/stage4_altitude_cutoff_20260626/reports/stage4_altitude_cutoff_lt12km_baseline_200.md)
 
 ### 0A.6 交接后建议的下一步顺序
 
 ```text
 第1优先级:
-  A. 补一个 P0-GFS / verify_gfs_background 报告
-     - 变量 / 层数 / 时次 / 200帧映射 / 高度覆盖 / 缺失统计
+  A. 在新窗口里先读完已经生成的 verify / oi_diag / altitude_cutoff 三份报告
+     - 先确认新窗口是否要坚持“全高度 official 目标”还是转向 “<=12km 业务口径”
 
 第2优先级:
-  B. 做 GFS 版 S4-OI-DIAG
-     - report-only
-     - innovation = observation - background
-     - 重点看 12km+ / count_0-1 / timeconf_0.4-0.6 / light wind
-
-第3优先级:
-  C. 补做 S4-CMA-M1 的 full-200 pairwise 封口
+  B. 补做 S4-CMA-M1 的 full-200 pairwise 封口
      - 目标是把“产品逻辑已跑通”补成“official == baseline 的正式证明”
 
+第3优先级:
+  C. 如果坚持全高度 official 目标：
+     - 只做 constrained S4-OI-1a / 1b
+     - 重点保护 light wind / 12km+ / count_0-1 / gap_ge30
+
 第4优先级:
-  D. 如果 GFS 的 OI-DIAG 结论稳定，再进 S4-OI-1a / 1b 的 oi_diag_approx / local_oi 实现
+  D. 如果项目允许改成 <=12km 业务口径：
+     - 用统一 cutoff 重写 baseline / gate / summary
+     - 不要把 “<12km 指标” 与 “全高度 official 指标” 混写
 ```
 
 ### 0A.7 外部参考资料（交接时要明确标出）
@@ -421,6 +431,30 @@ failed_count = 0
 策略 = source-level 去重缓存 + frame fan-out + 断点续跑 + 无限重试
 ```
 
+【本窗口最新补充】最初这批 `GFS` 只提取到 `200 hPa`，顶层约 `11.78 km`，因此旧版 verify 一度给出：
+
+```text
+supports_12km_plus = false
+ready_for_s4_oi_diag = false
+```
+
+随后已补齐 `150 hPa / 100 hPa`，并在不重复下载已有层的前提下刷新全部 cache/frame NPZ。当前最终盘上状态已变为：
+
+```text
+levels_count = 21
+pressure_hpa = 1000..100
+alt_km_max ≈ 15.7995
+supports_12km_plus = true
+ready_for_s4_oi_diag = true
+all_frame_shapes = (21, 81, 45)
+```
+
+相关脚本 / 报告：
+
+- [verify_gfs_background.py](/data/LFT-W02_data/pengxu/stage/centralized_v1/core/verify_gfs_background.py)
+- [gfs_background_verify_report_200.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/gfs_background_verify_report_200.md)
+- [gfs_background_verify_report_200.json](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/gfs_background_verify_report_200.json)
+
 输出目录：
 
 - [raw_grib](/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/gfs_historical_aws_200/raw_grib)
@@ -603,8 +637,8 @@ S4-OI-1a / 1b:
 ##### 5. 交接窗口里对 `P0-GFS` 的一句话说法
 
 ```text
-GFS 已经下载完成，但正式进入 OI 之前，还需要一份 verify_gfs_background 报告，
-确认变量、层数、时次和高空覆盖都没有问题；这一步通过后，S4-OI-DIAG 就可以无缝接上。
+GFS 已经从“200帧下载完成”推进到“21层 / 100hPa / verify通过 / ready_for_s4_oi_diag=true”，
+因此后续新窗口不需要再补下载或补 verify，可以直接基于当前结果决定要不要做 constrained OI。
 ```
 
 ---
@@ -680,12 +714,52 @@ if 通过 → 产品需求(完整场+低置信标注)已满足, 进 S4-OI-DIAG
 
 为后续 OI 提供"背景到底可不可靠"的证据。**依赖 P0-LEAK 通过。**
 
-【执行更新】下一步建议把这里的背景明确替换为 `GFS forecast`，而不是继续沿用 `CMA`。原因是：
+【执行更新】这里已经改为 `GFS forecast` 并跑完 report-only 版本。原因是：
 
 ```text
 1. CMA 已被审计为 reanalysis / analysis product
 2. CMA 可做 M1 display-only，但不宜承载 OI 独立背景角色
-3. GFS 200帧背景已经完整下载完成，具备进入 OI-DIAG 的现实条件
+3. GFS 200帧背景已经补齐到 `100 hPa` 并通过 verify，具备进入 OI-DIAG 的现实条件
+```
+
+【本窗口最终结果】正式结果见：
+
+- [s4_oi_diag_gfs_200.md](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/s4_oi_diag_gfs_200.md)
+- [s4_oi_diag_gfs_200.json](/data/LFT-W02_data/pengxu/优化/stage4_gfs_oi_diag_20260626/reports/s4_oi_diag_gfs_200.json)
+
+核心数字：
+
+```text
+train innovation:
+  inside_background_count = 154332
+  vector RMSE = 39.3400
+  vector MAE  = 33.8918
+
+strict holdout background:
+  inside_background_count = 530
+  vector RMSE = 35.2337
+  vector MAE  = 29.7866
+
+conditionally usable strata:
+  0-3km, 3-6km
+
+high-risk strata:
+  12km+, 6-9km, 9-12km,
+  count_0, count_1, count_ge2,
+  gap_10_30, gap_ge30, gap_lt10
+```
+
+因此这里现在的正确口径不是：
+
+```text
+GFS 已经准备好直接做 official OI
+```
+
+而是：
+
+```text
+GFS 已经准备好作为 diagnostic / weak background，
+只值得进入 very constrained 的 S4-OI-1a / 1b 小步实验。
 ```
 
 #### `S4-OI-DIAG` 通俗解释（交接/汇报可直接复用）
@@ -899,10 +973,51 @@ S4-OI-1a / 1b / local_oi
   if innovation 分层显示背景在 light/12km+/timeconf 风险层不可靠:
       保持 M1, 不进入 OI official branch
   if 背景在某些层可靠(innovation 合理, 无系统偏差):
-      记录"哪些层背景可用", 进阶段 B 的 OI
+      记录"哪些层背景可用", 进阶段 B 的 constrained OI
 ```
 
 验收：`s4_oi_diag_report.md`，含分层 innovation/obs_influence，结论"哪些层背景可信"。
+
+【执行后补充判断】本次 GFS 版 `S4-OI-DIAG` 已经给出明确分层判断：
+
+```text
+1. 0-3km / 3-6km 可视为“条件可用”
+2. 6-9km / 9-12km / 12km+ 仍然明显高风险
+3. count_0 / count_1 / gap_ge30 这些稀疏支撑层也仍高风险
+4. 所以当前更像“弱背景 / 诊断背景”，而不是“可直接混入 official recon 的强背景”
+```
+
+【关于 12km+ 的额外补充】本窗口还新增了：
+
+- [centralized_stage4_altitude_cutoff_report.py](/data/LFT-W02_data/pengxu/stage/centralized_v1/core/centralized_stage4_altitude_cutoff_report.py)
+- [stage4_altitude_cutoff_lt12km_baseline_200.md](/data/LFT-W02_data/pengxu/优化/stage4_altitude_cutoff_20260626/reports/stage4_altitude_cutoff_lt12km_baseline_200.md)
+
+它回答的是：
+
+```text
+如果业务上把 12km+ 区域去掉，剩余部分 baseline 表现会怎样？
+```
+
+结果为：
+
+```text
+12km+ 点数占比 = 41.89%
+12km+ SSE 占比 = 76.18%
+
+全高度 baseline vector RMSE = 14.7690
+<12km baseline vector RMSE   =  9.4552
+
+全高度 frame P95 = 27.9861
+<12km frame P95  = 20.9539
+```
+
+但要明确：
+
+```text
+这说明“12km+ 是主要误差污染源”是真的，
+不代表官方全高度目标已经解决；
+它本质上是“若业务允许改成 <=12km，则当前系统会显得更可接受”。
+```
 
 ---
 
@@ -1205,9 +1320,11 @@ $PY stage/centralized_v1/core/centralized_stage4_pairwise_frame_compare.py \
 [△] 第0步 P0-LEAK  : 已形成 cma_independence_report.md; 结论是 CMA 不放行 OI 主背景
 [x] 第0步 P0-CMA   : verify_cma_grib.py 已写并跑完
 [x] 第0步 P0-FLOOR : 误差地板估计脚本已完成工程版
-[x] 第0.5步 P0-GFS : 200帧 GFS 历史背景已全部下载完成 (178/178 unique source, 200/200 frame, failed=0)
+[x] 第0.5步 P0-GFS : 200帧 GFS 历史背景已全部下载完成，并补齐到 21层 / 100hPa / 15.80km
+[x] 第0.6步 P0-GFS-VERIFY : verify_gfs_background 已完成，ready_for_s4_oi_diag=true
 [△] 第1步 S4-CMA-M1: baseline 已跑; 6代表帧 display-only 已跑; full-200 pairwise 封口待补
-[ ] 第2步 S4-OI-DIAG: 下一步开始, 背景优先改用 GFS, report-only, 不改 recon
+[x] 第2步 S4-OI-DIAG: GFS 版 report-only 已跑完，不改 recon；结论是 weak/diagnostic background，可做 constrained OI，小心 high-risk strata
+[x] 第2.5步 P0-ALT12-CUT: <12km 评估脚本已补；已证实 12km+ 占 SSE 76.18%
 [ ] 第3步 S4-OI-1a/1b: --recon-mode oi_diag_approx/local_oi + _accumulate_local_oi
 [ ] 第4步 S4-OI-1c/1d: 独立背景 OI + Desroziers 校准(数学按 6.5, 非原 plan 写法)
 [ ] 第5步 按失败 stratum 选 S4-B / S4-C / S4-vert / S4-E
@@ -1215,7 +1332,7 @@ $PY stage/centralized_v1/core/centralized_stage4_pairwise_frame_compare.py \
 [ ] 第7步 S5-A UQ-gated abstention + S5-B 稳定化; plateau→S5-D
 每步: 独立输出目录 + promotion_checklist.json; smoke→formal 两道门; 一次一个 ID
 红线: CMA 永不进真值; strict_holdout_no_leakage 不破; motion 不当风; 背景填充区不进官方 RMSE; 12km+ 背景默认极低置信
-交接后首要任务: 先补 P0-GFS 报告, 再做 GFS 版 S4-OI-DIAG
+交接后首要任务: 先读完 GFS verify / OI-DIAG / altitude-cutoff 三份报告，再决定走“全高度 constrained OI”还是“<=12km 业务口径”
 ```
 
 ---

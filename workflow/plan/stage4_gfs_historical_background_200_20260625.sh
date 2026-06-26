@@ -14,6 +14,7 @@ LOG_DIR="$ROOT/优化/stage4_cma_m1_light_demo_20260625/logs"
 TMP_CSV="$OUT_ROOT/frame_times_200.csv"
 RUN_LOG="$LOG_DIR/gfs_historical_aws_200_resume.log"
 FAIL_LOG="$OUT_ROOT/failed_frames.txt"
+PRESSURE_LEVELS="1000,975,950,925,900,850,800,750,700,650,600,550,500,450,400,350,300,250,200,150,100"
 
 mkdir -p "$RAW_DIR" "$CACHE_NPZ_DIR" "$NPZ_DIR" "$LOG_DIR"
 cp "$FRAMES200" "$OUT_ROOT/frame_times_200.txt"
@@ -21,8 +22,10 @@ paste -sd, "$FRAMES200" > "$TMP_CSV"
 echo "[gfs-run] frames_file=$FRAMES200"
 echo "[gfs-run] out_root=$OUT_ROOT"
 echo "[gfs-run] run_log=$RUN_LOG"
+echo "[gfs-run] pressure_levels=$PRESSURE_LEVELS"
 "$PY" stage/download_stage5_gfs_aws_cached_batch.py \
   --frame-times-file "$FRAMES200" \
+  --pressure-levels "$PRESSURE_LEVELS" \
   --variables UGRD,VGRD \
   --raw-dir "$RAW_DIR" \
   --cache-npz-dir "$CACHE_NPZ_DIR" \
