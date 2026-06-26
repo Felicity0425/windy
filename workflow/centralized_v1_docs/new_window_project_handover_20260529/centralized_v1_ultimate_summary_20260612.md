@@ -7,6 +7,195 @@
 
 ---
 
+## 0. 2026-06-26 最新补充状态（覆盖 2026-06-12 之后的新执行结果）
+
+> 本节是对 `2026-06-12` 版本的**增补**，用于交接窗口和后续执行衔接。  
+> 若本节与正文旧结论冲突，以本节为准。
+
+### 0.1 这几天新增完成的工作
+
+在 `2026-06-12` 之后，项目没有直接进入 `Stage5` 或盲目继续调 `Stage4` 参数，而是先完成了以下几项关键前置工作：
+
+1. `P0-CMA`：新增并跑通 `verify_cma_grib.py`，系统审计本地 `CMA/CRA40` 数据。
+2. `P0-LEAK`：完成 `CMA` 背景独立性审计，并单独审计了项目自有数据是否能替代独立背景。
+3. `P0-FLOOR`：新增工程版误差地板估计脚本，量化当前 baseline 与可达 proxy floor 的差距。
+4. `S4-CMA-M1`：完成轻量 `200` 帧 baseline 复现实验，并在 `6` 个代表帧上跑通 `display-only weak background fill`。
+5. `P0-GFS`（新增）：放弃直接把 `CMA` 推到 `OI` 主背景，转而下载 `GFS forecast` 作为独立背景候选；当前 `200` 帧已全部完成。
+
+这一轮最重要的改变，不是某个指标提升了多少，而是**项目主线从“可能把 CMA 继续往 OI 推”修正为“CMA 留在 display-only，OI 主线改走 GFS forecast”**。
+
+### 0.2 当前最新执行状态总表
+
+| 计划项 | 当前状态 | 说明 |
+| --- | --- | --- |
+| `P0-FRAME` | 已核实，口径修正 | 当前代码已支持 `txt` 和 `json list`，不再是 blocker |
+| `P0-LEAK`(CMA) | 已完成审计，未放行 OI | `CMA-RA/CRA40` 被确认为 `reanalysis / analysis product` |
+| `P0-CMA` | 完成 | `773` 文件、`129` 时次、抽样可读 `18/18` |
+| `P0-FLOOR` | 完成（工程版） | baseline `14.7690`，proxy floor `11.1126`，剩余空间 `3.6564 m/s` |
+| `S4-CMA-M1` | 部分完成 | `200` 帧 baseline 已复现；`6` 代表帧 display-only 产品已跑通；full-200 pairwise 封口未做 |
+| `P0-GFS` | 完成 | `178/178` unique source，`200/200` frame，`failed_count = 0` |
+| `S4-OI-DIAG` | 未开始 | 下一步背景优先切到 `GFS`，而不是继续用 `CMA` |
+| `S4-OI-*` | 未开始 | 依赖 `P0-GFS` 体检和 `S4-OI-DIAG` 结果 |
+| `Stage5` | 未开始 | 当前不应提前进入 |
+
+### 0.3 现在最关键的新结论
+
+#### 0.3.1 `CMA-RA` 现在应如何定位
+
+现在已经可以明确：
+
+```text
+CMA-RA / CRA40 / NAFP_CRA40_FTM_6HOR = reanalysis / analysis product
+```
+
+这意味着：
+
+1. 它通常可能比纯 forecast 更接近真实大气状态。
+2. 但它与项目 holdout aircraft wind 的独立性**没有被证明**。
+3. 因此它当前适合：
+   - `display-only weak background fill`
+   - 参考大尺度流场
+   - 产品完整性分支
+4. 它当前不适合：
+   - 作为 `OI / innovation / Desroziers` 的正式独立背景
+
+换句话说：
+
+```text
+CMA 可能更“准”
+但 GFS 更“干净”
+```
+
+对于当前项目阶段，做 `OI-DIAG` 更需要“干净背景”，而不是单纯“更接近真实的再分析背景”。
+
+#### 0.3.2 `S4-CMA-M1` 的真实定位
+
+这一轮已经完成了 `S4-CMA-M1` 的轻量 demo：
+
+1. `200` 帧 baseline `metrics-only` 已复现官方基线。
+2. `6` 个代表帧已成功跑通 `display-only low-confidence background fill`。
+3. 代表帧背景填充比例约 `97.72% ~ 98.49%`，均值约 `98.16%`。
+4. 填充区域 `display_conf` 上限被压在 `0.20`。
+
+因此当前最稳妥的说法是：
+
+```text
+S4-CMA-M1 已经证明“完整风场 + 低置信标注”这条产品分支可行
+但 full-200 的 official == baseline pairwise 封口尚未做完
+```
+
+所以它是：
+
+```text
+已跑通的 product-completeness branch
+而不是已经封口的 official default branch
+```
+
+#### 0.3.3 `P0-FLOOR` 给出的现实优化空间
+
+工程版误差地板估计结果为：
+
+```text
+baseline vector RMSE = 14.769036
+local proxy vector floor = 11.112602
+distance to floor = 3.656433
+12km+ baseline = 19.917698
+12km+ proxy floor = 14.168927
+```
+
+这个结果很重要，因为它说明：
+
+1. 系统确实还有改进空间，但不是无限大。
+2. 高空 `12km+` 仍然是最主要的可攻克矛盾。
+3. 后续任何复杂方法都必须对照“离地板还剩多少”，不能再假设全局 RMSE 还可以轻易大幅下降。
+
+#### 0.3.4 `GFS forecast` 已经成为下一阶段背景主线
+
+当前 `200` 帧历史背景下载已经完成：
+
+```text
+178 / 178 unique sources
+200 / 200 frame NPZ
+failed_count = 0
+```
+
+并且已经确认：
+
+1. 当前本地下载的是 `GFS 0.25°` 区域裁剪背景。
+2. 当前默认提取层为 `1000 ... 200 hPa`。
+3. 当前最高层约对应 `11.78 km`，因此对于真正的 `12km+` 尾部仍然偏紧。
+4. 原始 `.idx` 已确认存在 `150 hPa` 和 `100 hPa` 的 `UGRD/VGRD` 记录，因此后续如要深入打高空，**可以补高层，不是数据源没有**。
+
+当前最合理的判断是：
+
+```text
+这批 GFS 已足够支持第一阶段 S4-OI-DIAG
+若 OI 路线显示有希望，再补 150/100 hPa 以增强 12km+ 背景
+```
+
+### 0.4 为什么项目现在要验证“背景 + 观测”这条路线
+
+这个问题在 `2026-06-12` 版本里还没有被完全展开。  
+现在需要明确：
+
+项目当前的难点，不是低层观测密集区，而是：
+
+```text
+12km+
+count_0 / count_1
+dist_ge6km
+gap_ge30
+中等 time_conf 风险层
+```
+
+这些区域的共同问题是：
+
+```text
+观测约束不足
+```
+
+所以验证“背景 + 观测”路线的意义在于：
+
+1. 不是让背景替代观测。
+2. 而是在观测足够时依然以观测为主。
+3. 只在观测稀疏、高空和空白区，让背景提供一个大尺度、连续、低置信的弱约束。
+
+也就是说，项目现在想验证的不是：
+
+```text
+GFS 能不能直接生成更好的最终风场
+```
+
+而是：
+
+```text
+如果给系统一个相对独立、连续的大尺度先验，
+它能不能在高空和稀疏区真正帮上忙，而且不破坏已有优势
+```
+
+这就是 `S4-OI-DIAG`、`innovation`、`obs_influence` 这些步骤存在的意义。
+
+### 0.5 当前最务实的下一步
+
+如果只给出一条最稳妥的后续执行线，现在建议是：
+
+```text
+1. 先补 verify_gfs_background 报告
+2. 用 GFS 进入 S4-OI-DIAG (report-only)
+3. 再决定是否值得继续做 oi_diag_approx / local_oi
+4. 与此同时，可补 S4-CMA-M1 的 full-200 pairwise 封口
+```
+
+不建议当前直接做的事：
+
+```text
+1. 继续把 CMA 推向 OI 主背景
+2. 跳过 GFS 体检直接做 local OI
+3. 现在就重新大规模推进 Stage5
+```
+
+---
+
 ## 1. 先给结论：这个项目现在到底是什么
 
 `centralized_v1` 是一个**中心化三维风场重构项目**。  
