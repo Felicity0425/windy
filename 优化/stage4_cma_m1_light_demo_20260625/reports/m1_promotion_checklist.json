@@ -1,0 +1,58 @@
+{
+  "baseline_metrics_dir": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/tp26_metrics_only_200_25w",
+  "baseline_metrics_csv": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/tp26_metrics_only_200_25w/stage4_localization_sensitivity_aggregate.csv",
+  "baseline_point_departures_csv": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/tp26_metrics_only_200_25w/stage4_point_departures.csv",
+  "representative_frame_count": 6,
+  "representative_items": [
+    {
+      "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260131123000_center_strict.npz",
+      "time_str": "20260131123000",
+      "display_background_voxels": 12409454,
+      "display_active_voxels": 12613125,
+      "display_background_confidence_max": 0.20000000298023224,
+      "display_source_code_2": "low_confidence_weak_background_display_only"
+    },
+    {
+      "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260207001200_center_strict.npz",
+      "time_str": "20260207001200",
+      "display_background_voxels": 12382169,
+      "display_active_voxels": 12613125,
+      "display_background_confidence_max": 0.20000000298023224,
+      "display_source_code_2": "low_confidence_weak_background_display_only"
+    },
+    {
+      "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260210041800_center_strict.npz",
+      "time_str": "20260210041800",
+      "display_background_voxels": 12392242,
+      "display_active_voxels": 12613125,
+      "display_background_confidence_max": 0.20000000298023224,
+      "display_source_code_2": "low_confidence_weak_background_display_only"
+    },
+    {
+      "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260211031200_center_strict.npz",
+      "time_str": "20260211031200",
+      "display_background_voxels": 12325231,
+      "display_active_voxels": 12613125,
+      "display_background_confidence_max": 0.20000000298023224,
+      "display_source_code_2": "low_confidence_weak_background_display_only"
+    },
+    {
+      "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260219015400_center_strict.npz",
+      "time_str": "20260219015400",
+      "display_background_voxels": 12354951,
+      "display_active_voxels": 12613125,
+      "display_background_confidence_max": 0.20000000298023224,
+      "display_source_code_2": "low_confidence_weak_background_display_only"
+    },
+    {
+      "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260223133000_center_strict.npz",
+      "time_str": "20260223133000",
+      "display_background_voxels": 12422768,
+      "display_active_voxels": 12613125,
+      "display_background_confidence_max": 0.20000000298023224,
+      "display_source_code_2": "low_confidence_weak_background_display_only"
+    }
+  ],
+  "official_metrics_rule": "M1 is display-only. Official strict-holdout metrics remain those from the metrics-only tp26 run because recon_u/v/conf/mask were not modified.",
+  "display_value_rule": "Representative frames must show display_source=2 only in low-confidence background-filled voxels with display_conf <= 0.20."
+}

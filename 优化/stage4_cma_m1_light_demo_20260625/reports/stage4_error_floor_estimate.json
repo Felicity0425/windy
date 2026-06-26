@@ -1,0 +1,64 @@
+{
+  "generated_utc": "2026-06-25T09:45:46.755932Z",
+  "point_csv": "centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/stage4_point_departures.csv",
+  "overall": {
+    "point_count": 530,
+    "baseline_vector_rmse_mps": 14.769035584178596,
+    "baseline_component_rmse_mps": 10.44328521315811,
+    "emaddc_component_sigma_rms_mps": 2.734638053384564,
+    "dehaan_component_sigma_rms_mps": 1.1250408797604106,
+    "neighbor_min_component_proxy_rms_mps": 7.366594952535022,
+    "observation_only_vector_floor_mps": 3.8673622232780103,
+    "proxy_vector_floor_mps": 11.112602438468981,
+    "baseline_minus_proxy_floor_mps": 3.656433145709615,
+    "excess_variance_fraction_vs_emaddc": 0.931431377061589,
+    "method_note": "Observation priors come from EMADDC/de Haan altitude bins. The proxy floor adds the local point-neighbor minimum vector-error diagnostic as a representativeness term. This is a bounded engineering estimate, not a formal triple-collocation proof."
+  },
+  "altitude_bins": [
+    {
+      "altitude_bin": "0-3km",
+      "point_count": 39,
+      "baseline_vector_rmse_mps": 5.6871222326995685,
+      "baseline_component_rmse_mps": 4.021402696178644,
+      "emaddc_component_sigma_rms_mps": 2.2000000000000006,
+      "proxy_vector_floor_mps": 4.656706420246715,
+      "excess_variance_fraction_vs_emaddc": 0.7007113604586851
+    },
+    {
+      "altitude_bin": "3-6km",
+      "point_count": 47,
+      "baseline_vector_rmse_mps": 8.440119143357967,
+      "baseline_component_rmse_mps": 5.968065480290813,
+      "emaddc_component_sigma_rms_mps": 2.5,
+      "proxy_vector_floor_mps": 7.654875641187515,
+      "excess_variance_fraction_vs_emaddc": 0.8245259667532945
+    },
+    {
+      "altitude_bin": "6-9km",
+      "point_count": 85,
+      "baseline_vector_rmse_mps": 7.638472469671272,
+      "baseline_component_rmse_mps": 5.401215681211311,
+      "emaddc_component_sigma_rms_mps": 2.8,
+      "proxy_vector_floor_mps": 7.136282639233487,
+      "excess_variance_fraction_vs_emaddc": 0.7312595605746903
+    },
+    {
+      "altitude_bin": "9-12km",
+      "point_count": 137,
+      "baseline_vector_rmse_mps": 11.451701618793976,
+      "baseline_component_rmse_mps": 8.097575870774184,
+      "emaddc_component_sigma_rms_mps": 2.800000000000001,
+      "proxy_vector_floor_mps": 9.786013131973737,
+      "excess_variance_fraction_vs_emaddc": 0.8804344651308349
+    },
+    {
+      "altitude_bin": "12km+",
+      "point_count": 222,
+      "baseline_vector_rmse_mps": 19.91769778048141,
+      "baseline_component_rmse_mps": 14.083939166202653,
+      "emaddc_component_sigma_rms_mps": 2.799999999999995,
+      "proxy_vector_floor_mps": 14.168926569463,
+      "excess_variance_fraction_vs_emaddc": 0.9604753728615906
+    }
+  ]
+}

@@ -1,0 +1,609 @@
+{
+  "generated_utc": "2026-06-25T09:45:46.587730Z",
+  "cma_dir": "/data/LFT-W02_data/pengxu/cma",
+  "inventory": {
+    "file_count": 773,
+    "time_count": 129,
+    "wind_time_count": 129,
+    "time_min": "2026012300",
+    "time_max": "2026022400",
+    "var_counts": {
+      "GPH": 128,
+      "RHU": 129,
+      "TEM": 129,
+      "VVP": 129,
+      "WIU": 129,
+      "WIV": 129
+    },
+    "missing_required_by_time": {},
+    "missing_optional_by_time": {
+      "2026022012": [
+        "GPH"
+      ]
+    }
+  },
+  "read_probe": {
+    "mode": "sample_read",
+    "probe_count": 18,
+    "success_count": 18,
+    "failure_count": 0,
+    "failures": [],
+    "samples": [
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_GPH_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780561849&Signature=6WloF%2FiZLWLtwZIo+pGSNBf0Tvs=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "gh",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_GPH_2026020800_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780562502&Signature=etgdp+JDbEUzlF3uhOMb5bZSrpE=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "gh",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_GPH_2026022400_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780563140&Signature=V4yQNTS4p02l+5%2F6Dv0lgHP3d24=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "gh",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_RHU_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780563147&Signature=9m7tMMLeuUslJnSIvwJN9YteapI=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "r",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          41,
+          160,
+          197
+        ],
+        "levels_count": 41,
+        "level_hpa_min": 10.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 25921.862062919656,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_RHU_2026020800_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780563636&Signature=QeM3SdbypkvBlYSzAKNQw4TQdvg=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "r",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          41,
+          160,
+          197
+        ],
+        "levels_count": 41,
+        "level_hpa_min": 10.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 25921.862062919656,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_RHU_2026022400_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780564145&Signature=8jSdtcxh4IoU2TY1T9PndaWJ7G4=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "r",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          41,
+          160,
+          197
+        ],
+        "levels_count": 41,
+        "level_hpa_min": 10.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 25921.862062919656,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_TEM_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780564150&Signature=IGQKrxHsym0t8WNSJwlige8hJL4=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "t",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_TEM_2026020800_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780564508&Signature=hh1ler2TmNpXuCilHEwXXsS%2FpaM=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "t",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_TEM_2026022400_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780564865&Signature=C7xXX1mCMFhOB3ncvdGD77uqxzM=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "t",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_VVP_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780564875&Signature=jfzDlWx8xH3lWEtDVyaYE%2FhhYq0=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "w",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          37,
+          160,
+          197
+        ],
+        "levels_count": 37,
+        "level_hpa_min": 100.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 15799.468652365334,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_VVP_2026020800_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780565566&Signature=uW55495qkrP84hAvcXQsVnnDX%2Fk=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "w",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          37,
+          160,
+          197
+        ],
+        "levels_count": 37,
+        "level_hpa_min": 100.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 15799.468652365334,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_VVP_2026022400_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780566271&Signature=AfWM90uP%2FzH3oSU8J0YQivdFcAY=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "w",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          37,
+          160,
+          197
+        ],
+        "levels_count": 37,
+        "level_hpa_min": 100.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 15799.468652365334,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIU_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780566279&Signature=Gdk5N54ZPxhDc3d3+e+sZXrzoCs=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "u",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIU_2026020800_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780566820&Signature=+8HUupb4hlhCvVjyVrUxCy8gkko=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "u",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIU_2026022400_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780567327&Signature=aH6qOC1Vph8n0EzVjV5lDslE45g=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "u",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIV_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780567335&Signature=27GA4y7uptiVO6XmA0DFM6yoxN0=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "v",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIV_2026020800_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780567875&Signature=2k7b9005zROpg99+TLaAx0p23tE=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "v",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      },
+      {
+        "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIV_2026022400_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780568376&Signature=HMWnQDmXboAtYmI56eB2ZA21XL8=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+        "short_name": "v",
+        "type_of_level": "isobaricInhPa",
+        "shape": [
+          47,
+          160,
+          197
+        ],
+        "levels_count": 47,
+        "level_hpa_min": 1.0,
+        "level_hpa_max": 1000.0,
+        "level_alt_m_min": 110.90398058648293,
+        "level_alt_m_max": 32452.915126196207,
+        "lat_min": 3.902860628707316,
+        "lat_max": 53.547238824127845,
+        "lon_min": 73.75,
+        "lon_max": 135.0
+      }
+    ]
+  },
+  "vertical_coverage": {
+    "wind_probe": {
+      "path": "/data/LFT-W02_data/pengxu/cma/CRA40_WIU_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780566279&Signature=Gdk5N54ZPxhDc3d3+e+sZXrzoCs=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+      "short_name": "u",
+      "type_of_level": "isobaricInhPa",
+      "shape": [
+        47,
+        160,
+        197
+      ],
+      "levels_count": 47,
+      "level_hpa_min": 1.0,
+      "level_hpa_max": 1000.0,
+      "level_alt_m_min": 110.90398058648293,
+      "level_alt_m_max": 32452.915126196207,
+      "lat_min": 3.902860628707316,
+      "lat_max": 53.547238824127845,
+      "lon_min": 73.75,
+      "lon_max": 135.0
+    },
+    "gph_probe": {
+      "path": "/data/LFT-W02_data/pengxu/cma/CRA40_GPH_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780561849&Signature=6WloF%2FiZLWLtwZIo+pGSNBf0Tvs=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+      "short_name": "gh",
+      "type_of_level": "isobaricInhPa",
+      "shape": [
+        47,
+        160,
+        197
+      ],
+      "levels_count": 47,
+      "level_hpa_min": 1.0,
+      "level_hpa_max": 1000.0,
+      "level_alt_m_min": 110.90398058648293,
+      "level_alt_m_max": 32452.915126196207,
+      "lat_min": 3.902860628707316,
+      "lat_max": 53.547238824127845,
+      "lon_min": 73.75,
+      "lon_max": 135.0
+    },
+    "has_120hpa_or_higher_wind_level": true,
+    "has_15000m_or_higher_wind_level": true
+  },
+  "frame_coverage": [
+    {
+      "frame_times_path": "centralized_v1_output/stage4_guardrail_display_fill_200_20260605_25w/tp26_thr11_preserve_metrics/stage4_validation_frame_times.txt",
+      "frame_count": 200,
+      "frame_time_min": "20260124000000",
+      "frame_time_max": "20260223133000",
+      "exact_cma_hour_hits": 6,
+      "bracket_ok_count": 200,
+      "bracket_failure_count": 0,
+      "outside_inventory_range_count": 0,
+      "optional_gap_bracket_hits_count": 4,
+      "optional_gap_bracket_hits_preview": [
+        {
+          "frame_time": "20260220060600",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.016667,
+          "delta0_hours": 0.1,
+          "delta1_hours": 5.9,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220071800",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.216667,
+          "delta0_hours": 1.3,
+          "delta1_hours": 4.7,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220114200",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.95,
+          "delta0_hours": 5.7,
+          "delta1_hours": 0.3,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220130000",
+          "t0": "2026022012",
+          "t1": "2026022018",
+          "alpha": 0.166667,
+          "delta0_hours": 1.0,
+          "delta1_hours": 5.0,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        }
+      ],
+      "bracket_failures_preview": []
+    },
+    {
+      "frame_times_path": "centralized_v1_output/stage4_full_tp26_thr11_preserve_25w_taildiag_20260602_173319/stage4_holdout_only_frame_times_5614.txt",
+      "frame_count": 5614,
+      "frame_time_min": "20260123180000",
+      "frame_time_max": "20260223154200",
+      "exact_cma_hour_hits": 98,
+      "bracket_ok_count": 5614,
+      "bracket_failure_count": 0,
+      "outside_inventory_range_count": 0,
+      "optional_gap_bracket_hits_count": 101,
+      "optional_gap_bracket_hits_preview": [
+        {
+          "frame_time": "20260220060600",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.016667,
+          "delta0_hours": 0.1,
+          "delta1_hours": 5.9,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220061200",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.033333,
+          "delta0_hours": 0.2,
+          "delta1_hours": 5.8,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220061800",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.05,
+          "delta0_hours": 0.3,
+          "delta1_hours": 5.7,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220062400",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.066667,
+          "delta0_hours": 0.4,
+          "delta1_hours": 5.6,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220063000",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.083333,
+          "delta0_hours": 0.5,
+          "delta1_hours": 5.5,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220063600",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.1,
+          "delta0_hours": 0.6,
+          "delta1_hours": 5.4,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220064200",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.116667,
+          "delta0_hours": 0.7,
+          "delta1_hours": 5.3,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220064800",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.133333,
+          "delta0_hours": 0.8,
+          "delta1_hours": 5.2,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220065400",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.15,
+          "delta0_hours": 0.9,
+          "delta1_hours": 5.1,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        },
+        {
+          "frame_time": "20260220070000",
+          "t0": "2026022006",
+          "t1": "2026022012",
+          "alpha": 0.166667,
+          "delta0_hours": 1.0,
+          "delta1_hours": 5.0,
+          "incomplete_optional_times": [
+            "2026022012"
+          ]
+        }
+      ],
+      "bracket_failures_preview": []
+    }
+  ],
+  "independence_hint": {
+    "manual_product_type": "CMA-RA manual defines the product family as reanalysis built from observations, NWP, and data assimilation.",
+    "local_filename_suffix_example": "CRA40_GPH_2026012300_GLB_34KM_HOUR_V1_0_0.grib2?AWSAccessKeyId=KI3J2PI5BK70TA1UM1TI&Expires=1780561849&Signature=6WloF%2FiZLWLtwZIo+pGSNBf0Tvs=&dataCode=NAFP_CRA40_FTM_6HOR&userId=6D8F654D0717A61AF364A8BE1F7A6182",
+    "safe_for_m1_display_fill": true,
+    "safe_for_oi_without_provider_confirmation": false,
+    "reason": "Local 2026 files carry a CRA40 FTM 6-hour product suffix, but there is no local proof that the background is independent of the strict-holdout aircraft winds. Use it for display-only M1 first; block OI/innovation-based validation until the provider confirms independence."
+  }
+}

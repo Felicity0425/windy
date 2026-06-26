@@ -1,0 +1,38 @@
+[
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260131123000_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260131123000_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260131123000_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260131123000_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260207001200_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260207001200_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260207001200_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260207001200_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260210041800_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260210041800_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260210041800_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260210041800_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260211031200_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260211031200_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260211031200_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260211031200_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260219015400_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260219015400_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260219015400_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260219015400_centralized_stage4_diagnostics.png"
+  },
+  {
+    "frame_npz": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_stage4_display_fill/frame_20260223133000_center_strict.npz",
+    "png": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260223133000_centralized_stage4_slices.png",
+    "stats": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260223133000_centralized_stage4_slice_stats.csv",
+    "diagnostics": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/representative_visuals/20260223133000_centralized_stage4_diagnostics.png"
+  }
+]

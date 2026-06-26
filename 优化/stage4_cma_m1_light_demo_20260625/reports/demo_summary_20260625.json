@@ -1,0 +1,26 @@
+{
+  "official_metrics_200_demo": {
+    "holdout_points": 530,
+    "vector_rmse": 14.769035584178607,
+    "vector_mae": 6.854454224139126,
+    "frame_mean_rmse": 8.224309429102833,
+    "frame_p95_rmse": 27.986110980146194,
+    "frame_p99_rmse": 58.78377017267204,
+    "alt12_rmse": 19.917697780481415,
+    "light_rmse": 5.195876810373414,
+    "light_mae": 4.185283061205855,
+    "floor10_relative_mae": 0.2828040963230872
+  },
+  "m1_representative_summary": {
+    "frame_count": 6,
+    "background_fraction_min": 0.9771750458351915,
+    "background_fraction_max": 0.9849080223973044,
+    "background_fraction_mean": 0.9816073204168938,
+    "background_confidence_cap": 0.2
+  },
+  "notes": [
+    "The 200-frame main run was metrics-only with 25 workers; no per-frame Stage4 NPZ were generated for the full set.",
+    "M1 was rendered only on representative frames with cma_fusion_mode=off and display_fill_mode=low_conf_background.",
+    "CMA independence remains unproven for OI-grade claims; keep M1 as a product-only branch until provider confirmation."
+  ]
+}
