@@ -16,6 +16,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm
+from matplotlib.colors import PowerNorm
 from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 import numpy as np
@@ -38,6 +40,7 @@ from stage.centralized_v1.configs.centralized_v1_contract import (
     C4_DISPLAY_U,
     C4_DISPLAY_V,
     C4_POINT_EVAL_JSON,
+    C4_RELIABILITY_CONF,
     C4_RECON_CONF,
     C4_RECON_MASK,
     C4_RECON_U,
@@ -270,6 +273,53 @@ def _render_vertical_slice(ax, u3d, v3d, c3d, mask3d, blind3d, x_idx: int, title
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="speed (m/s)")
 
 
+def _render_confidence_slice(ax, c3d, mask3d, blind3d, z_idx: int, title: str, *, use_reliability_label: bool = False) -> None:
+    active = mask3d[z_idx] > 0
+    support = active & ~(blind3d[z_idx] > 0)
+    fill = active & (blind3d[z_idx] > 0)
+    conf = np.ma.masked_where(~active, c3d[z_idx])
+    cmap = plt.get_cmap("magma").copy()
+    cmap.set_bad("#f8fafc")
+    ax.set_facecolor("#f8fafc")
+    im = ax.imshow(conf, cmap=cmap, origin="upper", norm=PowerNorm(gamma=0.35, vmin=0.0, vmax=1.0))
+    ax.contour(support.astype(np.float32), levels=[0.5], colors=["#22c55e"], linewidths=0.9, alpha=0.95)
+    ax.contour(fill.astype(np.float32), levels=[0.5], colors=["#ef4444"], linewidths=0.9, alpha=0.95)
+    low_conf_mask = active & (c3d[z_idx] <= 0.20)
+    if np.any(low_conf_mask):
+        ax.contourf(
+            np.where(low_conf_mask, 1.0, np.nan),
+            levels=[0.5, 1.5],
+            colors=["#ffffff"],
+            alpha=0.18,
+        )
+    ax.add_line(Line2D([], [], color="#22c55e", linewidth=1.4, label="higher-confidence official support"))
+    ax.add_line(Line2D([], [], color="#ef4444", linewidth=1.4, label="low-confidence background fill"))
+    ax.set_title(title)
+    ax.set_xlabel("x voxel")
+    ax.set_ylabel("y voxel")
+    ax.legend(loc="upper right", fontsize=7)
+    label = "reliability confidence (0-1)" if use_reliability_label else "display confidence (0-1)"
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label=label)
+
+
+def _render_source_slice(ax, source3d, mask3d, z_idx: int, title: str) -> None:
+    source = np.asarray(source3d[z_idx], dtype=np.uint8).copy()
+    source[mask3d[z_idx] <= 0] = 0
+    cmap = ListedColormap(["#f8fafc", "#22c55e", "#ef4444"])
+    norm = BoundaryNorm([-0.5, 0.5, 1.5, 2.5], cmap.N)
+    ax.set_facecolor("#f8fafc")
+    im = ax.imshow(source, cmap=cmap, norm=norm, origin="upper")
+    ax.add_patch(Rectangle((0, 0), 0, 0, facecolor="#22c55e", edgecolor="none", label="official recon support"))
+    ax.add_patch(Rectangle((0, 0), 0, 0, facecolor="#ef4444", edgecolor="none", label="low-confidence background fill"))
+    ax.add_patch(Rectangle((0, 0), 0, 0, facecolor="#f8fafc", edgecolor="#cbd5e1", label="outside recon mask"))
+    ax.set_title(title)
+    ax.set_xlabel("x voxel")
+    ax.set_ylabel("y voxel")
+    ax.legend(loc="upper right", fontsize=7)
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, ticks=[0, 1, 2])
+    cbar.ax.set_yticklabels(["none", "official", "background fill"])
+
+
 def _auto_x_slice(c3d: np.ndarray, point_eval: list[dict], requested: int | None) -> tuple[int, str]:
     if requested is not None:
         x = min(max(0, int(requested)), c3d.shape[2] - 1)
@@ -466,7 +516,7 @@ def _write_diagnostic_chart(
     metrics: dict[str, float],
     extent: dict[str, float | int],
 ) -> Path:
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 8.0), constrained_layout=True)
+    fig, axes = plt.subplots(2, 3, figsize=(17.0, 8.0), constrained_layout=True)
     labels = [str(row["slice"]).replace("horizontal_", "h_").replace("vertical_", "v_") for row in stats_rows]
     active = [int(row["active_voxels"]) for row in stats_rows]
     support = [int(row["support_voxels"]) for row in stats_rows]
@@ -491,21 +541,32 @@ def _write_diagnostic_chart(
     axes[0, 1].legend(fontsize=8)
     axes[0, 1].grid(alpha=0.2)
 
+    conf_mean = [float(row["conf_mean"]) for row in stats_rows]
+    conf_max = [float(row["conf_max"]) for row in stats_rows]
+    axes[1, 0].bar(x - 0.18, conf_mean, width=0.36, label="mean confidence (0-1)", color="#7c3aed", alpha=0.80)
+    axes[1, 0].bar(x + 0.18, conf_max, width=0.36, label="max confidence (0-1)", color="#f59e0b", alpha=0.80)
+    axes[1, 0].set_title("Confidence statistics (0-1)")
+    axes[1, 0].set_xticks(x)
+    axes[1, 0].set_xticklabels(labels, rotation=25, ha="right")
+    axes[1, 0].set_ylim(0.0, 1.05)
+    axes[1, 0].legend(fontsize=8)
+    axes[1, 0].grid(axis="y", alpha=0.2)
+
     if point_eval:
         idx = np.arange(len(point_eval))
         vec = [float(row.get("vector_error", 0.0)) for row in point_eval]
         conf = [float(row.get("recon_confidence", 0.0)) for row in point_eval]
-        axes[1, 0].bar(idx, vec, color="#8b5cf6", alpha=0.78, label="vector error (m/s)")
-        axes[1, 0].plot(idx, conf, color="#111827", marker="o", linewidth=1.2, label="recon confidence (0-1)")
-        axes[1, 0].set_title("Hold-out point errors")
-        axes[1, 0].set_xlabel("hold-out index")
-        axes[1, 0].set_ylabel("error (m/s) / confidence (0-1)")
-        axes[1, 0].legend(fontsize=8)
-        axes[1, 0].grid(axis="y", alpha=0.2)
+        axes[1, 1].bar(idx, vec, color="#8b5cf6", alpha=0.78, label="vector error (m/s)")
+        axes[1, 1].plot(idx, conf, color="#111827", marker="o", linewidth=1.2, label="recon confidence (0-1)")
+        axes[1, 1].set_title("Hold-out point errors")
+        axes[1, 1].set_xlabel("hold-out index")
+        axes[1, 1].set_ylabel("error (m/s) / confidence (0-1)")
+        axes[1, 1].legend(fontsize=8)
+        axes[1, 1].grid(axis="y", alpha=0.2)
     else:
-        axes[1, 0].axis("off")
+        axes[1, 1].axis("off")
 
-    axes[1, 1].axis("off")
+    axes[1, 2].axis("off")
     lines = [
         f"hold-out count: {int(metrics['holdout_count'])}",
         f"RMSE vector: {metrics['rmse_vector']:.3f} m/s",
@@ -521,7 +582,7 @@ def _write_diagnostic_chart(
         "PINN-proxy + diffusion-style low-conf fill",
         "Block footprint = engineering localization/fill, not physical proof.",
     ]
-    axes[1, 1].text(0.02, 0.92, "\n".join(lines), va="top", fontsize=11)
+    axes[1, 2].text(0.02, 0.92, "\n".join(lines), va="top", fontsize=11)
     fig.suptitle(f"Stage4 diagnostics - {time_str}", fontsize=13)
     out = out_dir / f"{time_str}_centralized_stage4_diagnostics.png"
     fig.savefig(out, dpi=170)
@@ -561,6 +622,7 @@ def main() -> None:
     args.frame_npz = batch_paths[0]
     with np.load(args.frame_npz, allow_pickle=False) as z:
         field_mode = str(args.field_mode)
+        reliability_c3d: np.ndarray | None = None
         if field_mode == "display_filled":
             missing = [key for key in [C4_DISPLAY_U, C4_DISPLAY_V, C4_DISPLAY_CONF, C4_DISPLAY_MASK] if key not in z.files]
             if missing:
@@ -568,6 +630,7 @@ def main() -> None:
             u3d = np.asarray(z[C4_DISPLAY_U], dtype=np.float32)
             v3d = np.asarray(z[C4_DISPLAY_V], dtype=np.float32)
             c3d = np.asarray(z[C4_DISPLAY_CONF], dtype=np.float32)
+            reliability_c3d = np.asarray(z[C4_RELIABILITY_CONF], dtype=np.float32) if C4_RELIABILITY_CONF in z.files else None
             mask3d = np.asarray(z[C4_DISPLAY_MASK], dtype=np.float32) > 0
             display_source = np.asarray(z[C4_DISPLAY_SOURCE], dtype=np.uint8) if C4_DISPLAY_SOURCE in z.files else np.zeros_like(c3d, dtype=np.uint8)
             official_u3d = np.asarray(z[C4_RECON_U], dtype=np.float32)
@@ -618,11 +681,29 @@ def main() -> None:
         crop_mode=str(args.crop_mode),
         crop_pad=int(args.crop_pad),
     )
+    if reliability_c3d is not None:
+        if crop_meta.get("crop_mode") == "bbox":
+            reliability_c3d = reliability_c3d[
+                :,
+                int(crop_meta["crop_y0"]) : int(crop_meta["crop_y1"]) + 1,
+                int(crop_meta["crop_x0"]) : int(crop_meta["crop_x1"]) + 1,
+            ]
+        reliability_c3d = np.where(mask3d, reliability_c3d, 0.0).astype(np.float32)
+    if str(args.field_mode) == "display_filled":
+        if crop_meta.get("crop_mode") == "bbox":
+            display_source = display_source[
+                :,
+                int(crop_meta["crop_y0"]) : int(crop_meta["crop_y1"]) + 1,
+                int(crop_meta["crop_x0"]) : int(crop_meta["crop_x1"]) + 1,
+            ]
+        display_source = np.where(mask3d, display_source, 0).astype(np.uint8)
     z_levels = _auto_z_levels(mask3d, str(args.z_levels), max_levels=3)
     x_idx, x_source = _auto_x_slice(c3d, point_eval, args.x_slice)
     extent = _extent_stats(mask3d, blind, u3d, v3d, c3d)
     cols = max(3, len(z_levels) + 1)
-    fig, axes = plt.subplots(2, cols, figsize=(5.6 * cols, 9.0), constrained_layout=True)
+    if str(args.field_mode) == "display_filled":
+        cols = max(cols, len(z_levels) + 4)
+    fig, axes = plt.subplots(2, cols, figsize=(5.2 * cols, 9.0), constrained_layout=True)
     if str(args.field_mode) == "display_filled":
         fig.patch.set_facecolor("#e5e7eb")
     for i, z_idx in enumerate(z_levels):
@@ -652,6 +733,37 @@ def main() -> None:
     axes[0, -1].set_ylabel("y voxel")
     plt.colorbar(radar_im, ax=axes[0, -1], fraction=0.046, pad=0.04, label="radar intensity (gray level)")
 
+    if str(args.field_mode) == "display_filled" and len(z_levels) > 0:
+        rel_col = len(z_levels)
+        conf_col = len(z_levels) + 1
+        source_col = len(z_levels) + 2
+        z_focus = int(z_levels[min(1, len(z_levels) - 1)])
+        _render_confidence_slice(
+            axes[0, rel_col],
+            reliability_c3d if reliability_c3d is not None else c3d,
+            mask3d,
+            blind,
+            z_focus,
+            f"Reliability slice z={z_focus}",
+            use_reliability_label=True,
+        )
+        _render_confidence_slice(
+            axes[0, conf_col],
+            c3d,
+            mask3d,
+            blind,
+            z_focus,
+            f"Display confidence slice z={z_focus}",
+            use_reliability_label=False,
+        )
+        _render_source_slice(
+            axes[0, source_col],
+            display_source,
+            mask3d,
+            z_focus,
+            f"Display source class z={z_focus}",
+        )
+
     _render_vertical_slice(axes[1, 0], u3d, v3d, c3d, mask3d, blind, int(x_idx), f"Vertical slice x={int(x_idx)} ({x_source})")
     speed = np.sqrt(u3d**2 + v3d**2)
     alt_profile = []
@@ -670,7 +782,7 @@ def main() -> None:
         axes[1, 2].text(
             0.02,
             0.92,
-            "display-filled layer\nweak background outside official recon\nnot official accuracy",
+            "display-filled layer\nweak background outside official recon\nconfidence/source views added:\nred contour = low-confidence background fill\ngreen contour = higher-confidence official support\nsource map: green=official, red=background fill",
             va="top",
             fontsize=11,
         )

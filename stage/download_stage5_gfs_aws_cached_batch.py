@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -78,6 +77,109 @@ def _write_frame_npz(cache_npz: Path, frame_npz: Path, frame_time: str, source_f
     payload["source_frame_times"] = np.array(",".join(source_frames))
     frame_npz.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(frame_npz, **payload)
+
+
+def _pressure_level_signature_from_payload(payload: dict[str, Any]) -> tuple[int, ...]:
+    if "pressure_hpa" not in payload:
+        return ()
+    pressure = np.asarray(payload["pressure_hpa"], dtype=np.float32).reshape(-1)
+    return tuple(int(round(float(v))) for v in pressure.tolist())
+
+
+def _pressure_level_signature(path: Path) -> tuple[int, ...]:
+    if not path.exists():
+        return ()
+    payload = _load_npz_payload(path)
+    return _pressure_level_signature_from_payload(payload)
+
+
+def _payload_level_index(payload: dict[str, Any]) -> dict[int, int]:
+    return {level: idx for idx, level in enumerate(_pressure_level_signature_from_payload(payload))}
+
+
+def _merge_cache_payloads(existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any]:
+    existing_levels = _payload_level_index(existing)
+    fresh_levels = _payload_level_index(fresh)
+    union_levels = sorted(set(existing_levels) | set(fresh_levels), reverse=True)
+    if not union_levels:
+        raise ValueError("Cannot merge cache payloads without pressure_hpa levels.")
+
+    out: dict[str, Any] = {}
+    scalar_prefer_existing = [
+        "time_str",
+        "source_file",
+        "source_url",
+        "source",
+        "cycle",
+        "forecast_hour",
+        "lat",
+        "lon",
+        "bbox_left_right_top_bottom",
+    ]
+    for key in scalar_prefer_existing:
+        if key in existing:
+            out[key] = np.array(existing[key])
+        elif key in fresh:
+            out[key] = np.array(fresh[key])
+
+    lat_existing = np.asarray(existing.get("lat", []), dtype=np.float32)
+    lat_fresh = np.asarray(fresh.get("lat", []), dtype=np.float32)
+    lon_existing = np.asarray(existing.get("lon", []), dtype=np.float32)
+    lon_fresh = np.asarray(fresh.get("lon", []), dtype=np.float32)
+    if lat_existing.size and lat_fresh.size and not np.allclose(lat_existing, lat_fresh, equal_nan=True):
+        raise ValueError("Existing and fresh GFS cache lat axes differ; cannot merge.")
+    if lon_existing.size and lon_fresh.size and not np.allclose(lon_existing, lon_fresh, equal_nan=True):
+        raise ValueError("Existing and fresh GFS cache lon axes differ; cannot merge.")
+
+    shape_tail = None
+    for payload in (existing, fresh):
+        for key in ("u", "v"):
+            if key in payload:
+                arr = np.asarray(payload[key])
+                if arr.ndim == 3:
+                    shape_tail = arr.shape[1:]
+                    break
+        if shape_tail is not None:
+            break
+    if shape_tail is None:
+        raise ValueError("Cannot merge cache payloads without 3D u/v fields.")
+
+    out["pressure_hpa"] = np.asarray(union_levels, dtype=np.float32)
+    level_to_alt: dict[int, float] = {}
+    for payload, level_index in ((existing, existing_levels), (fresh, fresh_levels)):
+        alt = np.asarray(payload.get("alt_km", []), dtype=np.float32).reshape(-1)
+        for level, idx in level_index.items():
+            if idx < alt.size:
+                level_to_alt[level] = float(alt[idx])
+    out["alt_km"] = np.asarray([level_to_alt[level] for level in union_levels], dtype=np.float32)
+
+    union_keys = set(existing) | set(fresh)
+    for key in sorted(union_keys):
+        if key in out or key in {"pressure_hpa", "alt_km"}:
+            continue
+        ex = existing.get(key)
+        fr = fresh.get(key)
+        template = ex if ex is not None else fr
+        arr_template = np.asarray(template)
+        if arr_template.ndim == 3 and arr_template.shape[1:] == shape_tail:
+            merged = np.full((len(union_levels), *shape_tail), np.nan, dtype=arr_template.dtype)
+            for idx, level in enumerate(union_levels):
+                if level in fresh_levels and fr is not None:
+                    merged[idx] = np.asarray(fr)[fresh_levels[level]]
+                elif level in existing_levels and ex is not None:
+                    merged[idx] = np.asarray(ex)[existing_levels[level]]
+            out[key] = merged
+        else:
+            if ex is not None:
+                out[key] = np.array(ex)
+            elif fr is not None:
+                out[key] = np.array(fr)
+    return out
+
+
+def _missing_pressure_levels(cache_npz_path: Path, requested_levels: list[int]) -> list[int]:
+    existing = set(_pressure_level_signature(cache_npz_path))
+    return [level for level in requested_levels if int(level) not in existing]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -167,44 +269,61 @@ def main() -> None:
         idx_path = args.raw_dir / f"{stem}.idx"
         grib_path = args.raw_dir / f"{stem}.grib2"
         cache_npz_path = args.cache_npz_dir / f"{stem}.npz"
+        partial_grib_path = args.raw_dir / f"{stem}.partial.grib2"
+        partial_npz_path = args.cache_npz_dir / f"{stem}.partial.npz"
+        cache_updated = False
 
-        if cache_npz_path.exists():
-            print(f"[gfs-cached][skip-source] {stem} cache_npz_exists", flush=True)
+        missing_levels = _missing_pressure_levels(cache_npz_path, levels) if cache_npz_path.exists() else list(levels)
+        if cache_npz_path.exists() and not missing_levels:
+            print(f"[gfs-cached][skip-source] {stem} cache_npz_exists levels_ok", flush=True)
         else:
             attempt = 0
             while True:
                 attempt += 1
                 print(
                     f"[gfs-cached][source] {stem} frames={len(frames)} "
-                    f"attempt={attempt} cycle={key.cycle} f{int(key.forecast_hour):03d}",
+                    f"attempt={attempt} cycle={key.cycle} f{int(key.forecast_hour):03d} "
+                    f"missing_levels={missing_levels}",
                     flush=True,
                 )
                 try:
-                    for path in (idx_path, grib_path, cache_npz_path):
+                    download_levels = missing_levels if cache_npz_path.exists() else list(levels)
+                    download_set = set(download_levels)
+                    target_grib_path = partial_grib_path if cache_npz_path.exists() else grib_path
+                    target_npz_path = partial_npz_path if cache_npz_path.exists() else cache_npz_path
+                    for path in (idx_path, target_grib_path, target_npz_path):
                         if path.exists():
                             path.unlink()
                     _download_idx(str(idx_url), idx_path)
                     idx_records = _parse_idx(idx_path)
-                    selected = _select_records(idx_records, set(variables), set(levels))
-                    expected = len(variables) * len(levels)
+                    selected = _select_records(idx_records, set(variables), download_set)
+                    expected = len(variables) * len(download_levels)
                     print(f"[gfs-cached][source] {stem} selected={len(selected)} expected={expected}", flush=True)
                     if len(selected) < expected:
                         found = {(rec.variable, rec.level) for rec in selected}
                         missing = [
                             (var, f"{level} mb")
                             for var in variables
-                            for level in levels
+                            for level in download_levels
                             if (var, f"{level} mb") not in found
                         ]
                         raise RuntimeError(f"Missing selected messages: {missing[:20]}")
-                    _download_selected_grib(str(grib_url), selected, grib_path)
+                    _download_selected_grib(str(grib_url), selected, target_grib_path)
                     meta = {
                         "url": str(grib_url),
                         "cycle": key.cycle,
                         "forecast_hour": int(key.forecast_hour),
                     }
-                    _convert_roi(grib_path, cache_npz_path, frames[0], bbox, meta)
+                    _convert_roi(target_grib_path, target_npz_path, frames[0], bbox, meta)
+                    if cache_npz_path.exists() and target_npz_path == partial_npz_path:
+                        merged = _merge_cache_payloads(_load_npz_payload(cache_npz_path), _load_npz_payload(partial_npz_path))
+                        np.savez_compressed(cache_npz_path, **merged)
+                        if partial_npz_path.exists():
+                            partial_npz_path.unlink()
+                        if partial_grib_path.exists():
+                            partial_grib_path.unlink()
                     print(f"[gfs-cached][source-ok] {stem} cache_npz={cache_npz_path}", flush=True)
+                    cache_updated = True
                     break
                 except KeyboardInterrupt:
                     raise
@@ -224,13 +343,15 @@ def main() -> None:
             failed_frames.update(frames)
             continue
 
+        cache_signature = _pressure_level_signature(cache_npz_path)
         for frame_time in frames:
             frame_npz_path = args.frame_npz_dir / f"gfs_roi_{frame_time}.npz"
-            if frame_npz_path.exists():
+            frame_signature = _pressure_level_signature(frame_npz_path) if frame_npz_path.exists() else ()
+            if frame_npz_path.exists() and not cache_updated and frame_signature == cache_signature:
                 continue
             try:
                 _write_frame_npz(cache_npz_path, frame_npz_path, frame_time, frames)
-                print(f"[gfs-cached][frame-ok] {frame_time} <= {stem}", flush=True)
+                print(f"[gfs-cached][frame-ok] {frame_time} <= {stem} refreshed={int(frame_signature != cache_signature)}", flush=True)
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
