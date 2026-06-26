@@ -33,6 +33,13 @@ The practical state is:
 - The `200`-frame `GFS` historical background set is now complete:
   `178/178` unique sources, `200/200` frame NPZs, `failed_count = 0`.
 
+The most important project-level conclusion from this round is:
+
+```text
+CMA may be closer to reality as a reanalysis
+but GFS is currently the cleaner candidate background for OI-style diagnostics
+```
+
 ## Current mainline
 
 The active workflow is:
@@ -61,6 +68,25 @@ S4-OI-*    only after background diagnostics support it
 
 Do not default back to older frozen Stage4/Stage5 chains unless the task is
 explicitly historical comparison.
+
+## What changed after the older handover docs
+
+The earlier handover documents still explain the project foundation well, but
+the current practical route has changed in three important ways:
+
+1. `CMA-RA` is no longer treated as the natural next-step `OI` background.
+   It is currently a `display-only` / reference / product-completeness
+   background branch.
+2. `GFS forecast` has been adopted as the next candidate background for
+   `S4-OI-DIAG`, because background independence matters more than raw
+   closeness-to-truth at this stage.
+3. The next main question is no longer “which heuristic interpolation tweak
+   should we try next”, but:
+
+```text
+does background + observations actually help the hard parts of the problem
+without damaging the already-stable parts?
+```
 
 ## Repository layout
 
@@ -181,6 +207,19 @@ See:
 - [优化/stage4_cma_m1_light_demo_20260625/reports/demo_summary_20260625.json](优化/stage4_cma_m1_light_demo_20260625/reports/demo_summary_20260625.json)
 - [优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md](优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md)
 
+The current practical floor estimate is:
+
+```text
+baseline vector RMSE = 14.7690
+proxy floor          = 11.1126
+remaining gap        = 3.6564 m/s
+12km+ baseline       = 19.9177
+12km+ proxy floor    = 14.1689
+```
+
+This means the project still has room to improve, but the room is finite, and
+`12km+` remains the main hard stratum.
+
 ## CMA and GFS roles
 
 The repository currently distinguishes background roles carefully:
@@ -204,6 +243,13 @@ Reason:
 CMA-RA is a reanalysis / analysis product
 it may be closer to reality than forecast background
 but background independence from project holdout observations is not proven
+```
+
+Current practical meaning:
+
+```text
+CMA may be the more realistic-looking background
+but it is not currently the safer background for formal OI-grade claims
 ```
 
 ### `GFS forecast`
@@ -231,6 +277,14 @@ but the present default extraction tops out near 200 hPa (~11.8 km)
 so a later 150/100 hPa refresh may be useful for deeper 12km+ analysis
 ```
 
+Important nuance:
+
+```text
+the current GFS set is not the final answer
+it is the first independent background candidate used to test whether the
+background + observation route is worth continuing
+```
+
 ## Why background matters in this project
 
 The purpose of background fields here is not to replace aircraft observations.
@@ -255,6 +309,13 @@ This is why the repository now separates:
 - `report-only innovation diagnostics`
 - possible later `OI` official-branch experiments
 
+In project terms, the background is being tested to answer:
+
+```text
+can an independent large-scale prior help the 12km+ and sparse-support parts
+of the reconstruction problem without degrading stable low-risk regions?
+```
+
 ## New scripts added in the current round
 
 ### CMA / floor audit
@@ -276,12 +337,13 @@ This is why the repository now separates:
 
 Recommended reading order for the current state:
 
-1. [workflow/plan/plan_0625_executable.md](workflow/plan/plan_0625_executable.md)
-2. [优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md](优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md)
-3. [优化/stage4_cma_m1_light_demo_20260625/reports/cma_independence_report.md](优化/stage4_cma_m1_light_demo_20260625/reports/cma_independence_report.md)
-4. [优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md](优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md)
-5. [优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md](优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md)
-6. [workflow/centralized_v1_docs/new_window_project_handover_20260529/README.md](workflow/centralized_v1_docs/new_window_project_handover_20260529/README.md)
+1. [workflow/centralized_v1_docs/new_window_project_handover_20260529/centralized_v1_ultimate_summary_20260612.md](workflow/centralized_v1_docs/new_window_project_handover_20260529/centralized_v1_ultimate_summary_20260612.md)
+2. [workflow/plan/plan_0625_executable.md](workflow/plan/plan_0625_executable.md)
+3. [优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md](优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md)
+4. [优化/stage4_cma_m1_light_demo_20260625/reports/cma_independence_report.md](优化/stage4_cma_m1_light_demo_20260625/reports/cma_independence_report.md)
+5. [优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md](优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md)
+6. [优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md](优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md)
+7. [workflow/centralized_v1_docs/new_window_project_handover_20260529/README.md](workflow/centralized_v1_docs/new_window_project_handover_20260529/README.md)
 
 ## Current next steps
 
