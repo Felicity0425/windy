@@ -18,6 +18,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import argparse
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -32,11 +33,7 @@ else:
     POLARS_IMPORT_ERROR = None
 
 
-STAGE1_DIR = os.path.join(cfg.BASE_DIR, "stage1_output")
-STAGE1_WIND = os.path.join(STAGE1_DIR, "clean_wind.parquet")
-STAGE1_LOC = os.path.join(STAGE1_DIR, "clean_loc.parquet")
-STAGE1_RADAR_INDEX = os.path.join(STAGE1_DIR, "radar_index.json")
-STAGE1_WINDOW_INDEX = os.path.join(STAGE1_DIR, "frame_window_index.json")
+DEFAULT_STAGE1_DIR = os.path.join(cfg.BASE_DIR, "stage1_output")
 
 
 def _load_json(path: str) -> Any:
@@ -132,8 +129,19 @@ def _estimate_grid_coverage(df_loc) -> Dict[str, Any]:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Check Stage-1 / Stage-2 temporal and voxelization alignment.")
+    parser.add_argument("--stage1-dir", default=DEFAULT_STAGE1_DIR)
+    args = parser.parse_args()
+
+    stage1_dir = args.stage1_dir
+    stage1_wind = os.path.join(stage1_dir, "clean_wind.parquet")
+    stage1_loc = os.path.join(stage1_dir, "clean_loc.parquet")
+    stage1_radar_index = os.path.join(stage1_dir, "radar_index.json")
+    stage1_window_index = os.path.join(stage1_dir, "frame_window_index.json")
+
     report: Dict[str, Any] = {
         "ok": True,
+        "stage1_dir": stage1_dir,
         "stage1_files": {},
         "radar_files_found": 0,
         "radar_frames_parsed": 0,
@@ -149,22 +157,22 @@ def main():
         print(json.dumps(report, ensure_ascii=False, indent=2))
         raise SystemExit(2)
 
-    if not os.path.exists(STAGE1_WIND) or not os.path.exists(STAGE1_LOC):
+    if not os.path.exists(stage1_wind) or not os.path.exists(stage1_loc):
         report["ok"] = False
         report["errors"].append("stage1 output parquet files are missing")
         print(json.dumps(report, ensure_ascii=False, indent=2))
         raise SystemExit(1)
 
-    df_wind = _read_parquet(STAGE1_WIND)
-    df_loc = _read_parquet(STAGE1_LOC)
+    df_wind = _read_parquet(stage1_wind)
+    df_loc = _read_parquet(stage1_loc)
 
     if "time_utc" not in df_loc.columns and "接收时间（UTC）" in df_loc.columns:
         df_loc = df_loc.with_columns(pl.col("接收时间（UTC）").alias("time_utc"))
     if "time_utc" not in df_wind.columns and "接收时间（UTC）" in df_wind.columns:
         df_wind = df_wind.with_columns(pl.col("接收时间（UTC）").alias("time_utc"))
 
-    radar_index = _load_json(STAGE1_RADAR_INDEX) if os.path.exists(STAGE1_RADAR_INDEX) else []
-    frame_window_index = _load_json(STAGE1_WINDOW_INDEX) if os.path.exists(STAGE1_WINDOW_INDEX) else []
+    radar_index = _load_json(stage1_radar_index) if os.path.exists(stage1_radar_index) else []
+    frame_window_index = _load_json(stage1_window_index) if os.path.exists(stage1_window_index) else []
 
     report["stage1_files"] = {
         "clean_wind_rows": int(len(df_wind)),

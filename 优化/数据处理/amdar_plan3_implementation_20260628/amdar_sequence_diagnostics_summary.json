@@ -1,0 +1,36 @@
+{
+  "stage1_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_plan3_implementation_20260628/stage1_output_plan3_v1",
+  "out_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_plan3_implementation_20260628",
+  "batch_count": 56521,
+  "group_size_50_count": 392,
+  "group_size_50_phase_counts": {
+    "ASC": 392
+  },
+  "group_size_50_tail_top10": {
+    "B-5512": 25,
+    "B-5511": 24,
+    "B-6889": 13,
+    "B-5382": 10,
+    "B-1966": 8,
+    "B-6348": 8,
+    "B-1822": 7,
+    "B-5845": 7,
+    "B-1353": 6,
+    "B-2853": 6
+  },
+  "phase_altitude_increase_ratio_mean": {
+    "ASC": 0.6535215405027287,
+    "DES": 0.10107343822974843,
+    "LVR": 0.23914184240381445
+  },
+  "phase_altitude_decrease_ratio_mean": {
+    "ASC": 0.07712438166443004,
+    "DES": 0.5931649062505564,
+    "LVR": 0.3309828118733381
+  },
+  "phase_path_efficiency_mean": {
+    "ASC": 0.917102838811843,
+    "DES": 0.9413602570412374,
+    "LVR": 0.8756742989111422
+  }
+}
