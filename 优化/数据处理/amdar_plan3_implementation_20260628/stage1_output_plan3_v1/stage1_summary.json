@@ -1,0 +1,193 @@
+{
+  "clean_wind_rows": 431189,
+  "clean_loc_rows": 19162638,
+  "radar_total": 7396,
+  "radar_usable": 7395,
+  "window_records": 7395,
+  "num_workers": 25,
+  "parallel_mode": "thread_pool",
+  "wind_altitude_audit": {
+    "overall": {
+      "rows": 431189,
+      "nonnull_rows": 431183,
+      "min_m": 612.648,
+      "median_m": 6903.72,
+      "p90_m": 9784.08,
+      "max_m": 12222.480000000001,
+      "rows_gt_12000m": 6,
+      "rows_gt_15000m": 0,
+      "unit_mode_counts": {
+        "feet_source": 431189
+      },
+      "unit_state_counts": {
+        "feet_to_meters_source": 431183,
+        "altitude_outlier_nullified": 6
+      }
+    },
+    "by_source": {
+      "turb": {
+        "rows": 181,
+        "nonnull_rows": 175,
+        "min_m": 629.412,
+        "median_m": 6900.6720000000005,
+        "p90_m": 9171.1272,
+        "max_m": 10087.6608,
+        "rows_gt_12000m": 0,
+        "rows_gt_15000m": 0,
+        "unit_mode_counts": {
+          "feet_source": 181
+        },
+        "unit_state_counts": {
+          "feet_to_meters_source": 175,
+          "altitude_outlier_nullified": 6
+        }
+      },
+      "amdar": {
+        "rows": 431008,
+        "nonnull_rows": 431008,
+        "min_m": 612.648,
+        "median_m": 6903.72,
+        "p90_m": 9784.08,
+        "max_m": 12222.480000000001,
+        "rows_gt_12000m": 6,
+        "rows_gt_15000m": 0,
+        "unit_mode_counts": {
+          "feet_source": 431008
+        },
+        "unit_state_counts": {
+          "feet_to_meters_source": 431008
+        }
+      }
+    }
+  },
+  "loc_altitude_audit": {
+    "rows": 19162638,
+    "nonnull_rows": 19162638,
+    "min_m": 7.62,
+    "median_m": 8107.68,
+    "p90_m": 10698.48,
+    "max_m": 14325.6,
+    "rows_gt_12000m": 202017,
+    "rows_gt_15000m": 0,
+    "unit_mode_counts": {
+      "meters_source_with_feet_anomalies": 19162638
+    },
+    "unit_state_counts": {
+      "meters_preserved": 19161615,
+      "feet_to_meters_row": 1023
+    }
+  },
+  "numeric_field_audit": {
+    "wind_speed": {
+      "present": true,
+      "rows": 431189,
+      "null_rows": 0,
+      "nan_rows": 0,
+      "finite_rows": 431189,
+      "min": 1.0,
+      "median": 57.0,
+      "p90": 101.0,
+      "max": 254.0
+    },
+    "ground_speed_ms": {
+      "present": true,
+      "rows": 19162638,
+      "null_rows": 2019346,
+      "nan_rows": 0,
+      "finite_rows": 17143292,
+      "min": 0.0,
+      "median": 207.98827777777777,
+      "p90": 260.8896388888889,
+      "max": 631.6513611111111
+    },
+    "u_motion": {
+      "present": true,
+      "rows": 19162638,
+      "null_rows": 2019346,
+      "nan_rows": 0,
+      "finite_rows": 17143292,
+      "min": -377.5981801174812,
+      "median": -8.23912886895041,
+      "p90": 221.73368750246158,
+      "max": 435.7376864374275
+    },
+    "v_motion": {
+      "present": true,
+      "rows": 19162638,
+      "null_rows": 2019346,
+      "nan_rows": 0,
+      "finite_rows": 17143292,
+      "min": -507.3471305144449,
+      "median": 4.505914405832807e-15,
+      "p90": 221.19682547876369,
+      "max": 458.91045086479295
+    }
+  },
+  "wind_time_group_alignment_flag_counts": {
+    "amdar_batched_same_timestamp": 379262,
+    "amdar_duplicate_same_timestamp_requires_batch_handling": 45131,
+    "single_point_timestamp": 6790,
+    "duplicate_same_timestamp": 6
+  },
+  "wind_reconstruction_role_counts": {
+    "support_only_not_strict_truth": 424393,
+    "strict_truth_candidate": 6796
+  },
+  "wind_reconstruction_exclusion_reason_counts": {
+    "amdar_same_timestamp_duplicate_batch": 424393,
+    "none": 6796
+  },
+  "wind_usage_role_counts": {
+    "support_only_not_strict_truth": 431008,
+    "strict_truth_candidate": 181
+  },
+  "wind_time_quality_counts": {
+    "batch_time_confirmed": 424325,
+    "unverified_singleton_batch_time": 6683,
+    "trusted_source_time": 181
+  },
+  "wind_strict_time_truth_counts": {
+    "false": 431008,
+    "true": 181
+  },
+  "wind_obs_conf_audit": {
+    "obs_conf": {
+      "present": true,
+      "rows": 431189,
+      "null_rows": 0,
+      "nan_rows": 0,
+      "finite_rows": 431189,
+      "min": 0.35,
+      "median": 0.35,
+      "p90": 0.35,
+      "max": 1.0
+    },
+    "obs_conf_raw_for_reconstruction": {
+      "present": true,
+      "rows": 431189,
+      "null_rows": 0,
+      "nan_rows": 0,
+      "finite_rows": 431189,
+      "min": 0.9,
+      "median": 1.0,
+      "p90": 1.0,
+      "max": 1.0
+    }
+  },
+  "amdar_reconstruction_policy": {
+    "batched_same_timestamp_threshold_hspan_deg": 0.5,
+    "batched_same_timestamp_support_confidence": 0.35,
+    "strict_truth_role": "strict_truth_candidate",
+    "support_only_role": "support_only_not_strict_truth",
+    "support_only_exclusion_reason": "amdar_same_timestamp_duplicate_batch",
+    "policy_note": "all duplicate same-timestamp AMDAR rows are treated as batch-like support fusion inputs only and are excluded from strict holdout truth candidates until per-point observation time can be recovered"
+  },
+  "amdar_time_semantics_policy": {
+    "amdar_batch_time_semantics": "batch_time_unknown_exact_type",
+    "default_strict_time_truth": false,
+    "point_observation_time_available_by_default": false,
+    "conservative_export": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_plan3_implementation_20260628/stage1_output_plan3_v1/amdar_stage1_conservative.parquet",
+    "batch_statistics_export": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_plan3_implementation_20260628/stage1_output_plan3_v1/amdar_batch_statistics.parquet",
+    "note": "The existing wind_reconstruction_role split is preserved for current Stage2/Stage4 official evaluation compatibility; strict_time_truth is a separate, more conservative time-semantics field for future migration."
+  }
+}
