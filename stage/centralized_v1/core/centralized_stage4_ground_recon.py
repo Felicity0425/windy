@@ -73,6 +73,7 @@ from stage.centralized_v1.configs.centralized_v1_contract import (  # noqa: E402
 )
 
 STRICT_STAGE4_OUTPUT_DIR = Path("/data/LFT-W02_data/pengxu/centralized_v1_output/stage4_center_strict")
+OI_VARQC_BUDDY_POLICY_PATH = Path(__file__).resolve().parents[1] / "configs" / "oi_varqc_buddy_policy_v1.json"
 EFFECTIVE_CONF_THRESHOLD = 1e-6
 LOCALIZATION_KERNELS = {"gaussian", "gaspari_cohn"}
 LOCALIZATION_POLICIES = {
@@ -85,7 +86,13 @@ LOCALIZATION_POLICIES = {
 }
 GUARDED_VERTICAL_LOCALIZATION_POLICIES = {"guarded_dynamic_v2", "guarded_vertical_dynamic_v2"}
 VERTICAL_LOCALIZATION_POLICIES = {"fixed", "support_adaptive", *GUARDED_VERTICAL_LOCALIZATION_POLICIES}
-CONFIDENCE_MODES = {"diagnostic_only", "diagnostic_weighted", "obs_error_weighted", "representation_error_soft_weighted"}
+CONFIDENCE_MODES = {
+    "diagnostic_only",
+    "diagnostic_weighted",
+    "obs_error_weighted",
+    "representation_error_soft_weighted",
+    "oi_varqc_buddy_v1",
+}
 PHYSICS_CONSTRAINT_MODES = {"proxy", "pydda_3dvar_proxy"}
 ROLE_CONFLICT_MODES = {"off", "current_priority", "current_priority_adaptive"}
 VERTICAL_RISK_MODES = {"off", "preserve_strong_layers"}
@@ -178,6 +185,36 @@ DEFAULT_QC_CALIBRATION = {
     "obs_error_altitude_bin_sigma_mps": {},
     "obs_error_speed_bin_sigma_mps": {},
     "obs_error_density_bin_sigma_mps": {},
+    "use_stage2_obs_error_sigma": False,
+    "stage2_support_weight_is_active_weight": True,
+    "background_sigma_mps_default": 12.0,
+    "background_sigma_altitude_breaks_m": [0.0, 3000.0, 6000.0, 9000.0, 12000.0, 16000.0],
+    "background_sigma_mps_by_alt": [7.0, 8.5, 10.0, 12.0, 15.0],
+    "varqc_gross_error_prior_A": 0.06,
+    "varqc_uniform_width_u_mps": 260.0,
+    "varqc_uniform_width_v_mps": 260.0,
+    "varqc_gamma_min": 0.05,
+    "varqc_gamma_hard_floor": 0.01,
+    "varqc_d_hard_reject": 9.0,
+    "varqc_enable_hard_reject": False,
+    "buddy_k": 3.2,
+    "buddy_local_spread_min_mps": 3.0,
+    "buddy_local_spread_max_mps": 45.0,
+    "buddy_soft_scale": 2.0,
+    "buddy_min_factor": 0.15,
+    "buddy_hard_ratio": 99.0,
+    "buddy_enable_hard_reject": False,
+    "buddy_min_neighbors": 2,
+    "role_conflict_factor_min": 0.10,
+    "role_conflict_soft_scale": 1.25,
+    "robust_context_only_enabled": False,
+    "robust_context_spread_hi_mps": 30.0,
+    "robust_min_context_groups": 2,
+    "robust_min_context_weight": 0.05,
+    "robust_huber_delta_mps": 30.0,
+    "robust_irls_max_iter": 6,
+    "robust_irls_tol_mps": 0.05,
+    "max_background_only_after_qc_fraction": 0.05,
     "obs_error_consistency_bin_sigma_mps": {},
     "adaptive_localization_low_current_support": 2.0,
     "adaptive_localization_high_current_support": 8.0,
@@ -495,7 +532,12 @@ def _obs_error_sigma_for_row(row: dict[str, Any], calibration: dict[str, Any]) -
 
 
 def _obs_error_weight_bundle(row: dict[str, Any], calibration: dict[str, Any]) -> dict[str, float | str]:
-    sigma, sigma_source = _obs_error_sigma_for_row(row, calibration)
+    stage2_sigma = _safe_float(row.get("obs_error_sigma_mps"), float("nan"))
+    if _safe_float(calibration.get("use_stage2_obs_error_sigma"), 1.0) > 0.0 and math.isfinite(stage2_sigma) and stage2_sigma > 0.0:
+        sigma = stage2_sigma
+        sigma_source = "stage2_obs_error_sigma_mps"
+    else:
+        sigma, sigma_source = _obs_error_sigma_for_row(row, calibration)
     reference = max(1e-6, _cal_float(calibration, "obs_error_reference_sigma_mps", _cal_float(calibration, "obs_error_sigma_default_mps", 8.0)))
     obs_conf = float(np.clip(_safe_float(row.get("obs_conf"), 1.0), 0.0, 2.0))
     raw_weight = obs_conf * (reference / sigma) ** 2
@@ -585,6 +627,138 @@ def _representation_error_soft_weight_bundle(
     }
 
 
+def _background_sigma_for_altitude(altitude_m: float, calibration: dict[str, Any]) -> float:
+    default = max(1e-6, _cal_float(calibration, "background_sigma_mps_default", 10.0))
+    breaks = calibration.get("background_sigma_altitude_breaks_m", [])
+    sigmas = calibration.get("background_sigma_mps_by_alt", [])
+    if not isinstance(breaks, list) or not isinstance(sigmas, list) or len(breaks) < 2 or len(sigmas) < 1:
+        return default
+    edges = [_safe_float(value, float("nan")) for value in breaks]
+    values = [_safe_float(value, default) for value in sigmas]
+    if any(not math.isfinite(value) for value in edges):
+        return default
+    altitude = _safe_float(altitude_m, edges[0])
+    for idx in range(min(len(edges) - 1, len(values))):
+        if edges[idx] <= altitude < edges[idx + 1]:
+            return max(1e-6, float(values[idx]))
+    return max(1e-6, float(values[min(len(values) - 1, max(0, len(values) - 1))]))
+
+
+def _varqc_bundle(
+    row: dict[str, Any],
+    *,
+    cma_u: np.ndarray | None,
+    cma_v: np.ndarray | None,
+    cma_conf: np.ndarray | None,
+    calibration: dict[str, Any],
+) -> dict[str, Any]:
+    if cma_u is None or cma_v is None or cma_conf is None:
+        return {
+            "gamma_varqc": 1.0,
+            "varqc_d": 0.0,
+            "varqc_innovation_mps": 0.0,
+            "varqc_background_valid": False,
+            "varqc_reject": False,
+            "varqc_qc_reject_reason": "background_unavailable",
+        }
+    z = _safe_int(row.get("z"))
+    y = _safe_int(row.get("y"))
+    x = _safe_int(row.get("x"))
+    if not (0 <= z < cma_u.shape[0] and 0 <= y < cma_u.shape[1] and 0 <= x < cma_u.shape[2]):
+        background_valid = False
+    else:
+        background_valid = (
+            math.isfinite(float(cma_u[z, y, x]))
+            and math.isfinite(float(cma_v[z, y, x]))
+            and math.isfinite(float(cma_conf[z, y, x]))
+            and float(cma_conf[z, y, x]) > 0.0
+        )
+    if not background_valid:
+        return {
+            "gamma_varqc": 1.0,
+            "varqc_d": 0.0,
+            "varqc_innovation_mps": 0.0,
+            "varqc_background_valid": False,
+            "varqc_reject": False,
+            "varqc_qc_reject_reason": "background_invalid",
+        }
+    du = _safe_float(row.get("u")) - float(cma_u[z, y, x])
+    dv = _safe_float(row.get("v")) - float(cma_v[z, y, x])
+    sigma_o = max(1e-6, _safe_float(row.get("obs_error_sigma_vector_mps"), _safe_float(row.get("obs_error_sigma_mps"), 8.0)))
+    sigma_b = _background_sigma_for_altitude(_safe_float(row.get("alt_meters"), ALT_MIN + z * DELTA_ALT), calibration)
+    su = max(1e-6, math.sqrt(sigma_o**2 + sigma_b**2))
+    sv = su
+    d2 = (du**2 / su**2) + (dv**2 / sv**2)
+    d = math.sqrt(max(0.0, d2))
+    prior_a = float(np.clip(_cal_float(calibration, "varqc_gross_error_prior_A", 0.08), 1e-6, 0.999999))
+    width_u = max(1e-6, _cal_float(calibration, "varqc_uniform_width_u_mps", 240.0))
+    width_v = max(1e-6, _cal_float(calibration, "varqc_uniform_width_v_mps", 240.0))
+    log_p_good = math.log(max(1e-12, 1.0 - prior_a)) - math.log(2.0 * math.pi * su * sv) - 0.5 * d2
+    log_p_gross = math.log(prior_a) - math.log(width_u) - math.log(width_v)
+    m = max(log_p_good, log_p_gross)
+    gamma = math.exp(log_p_good - (m + math.log(math.exp(log_p_good - m) + math.exp(log_p_gross - m))))
+    gamma_min = float(np.clip(_cal_float(calibration, "varqc_gamma_min", 0.02), 0.0, 1.0))
+    gamma = float(np.clip(gamma, gamma_min, 1.0))
+    reject = (
+        bool(calibration.get("varqc_enable_hard_reject", True))
+        and d > _cal_float(calibration, "varqc_d_hard_reject", 7.0)
+        and gamma < _cal_float(calibration, "varqc_gamma_hard_floor", 0.02)
+    )
+    return {
+        "gamma_varqc": gamma,
+        "varqc_d": float(d),
+        "varqc_innovation_mps": float(math.sqrt(du**2 + dv**2)),
+        "varqc_background_valid": True,
+        "varqc_reject": bool(reject),
+        "varqc_qc_reject_reason": "gross_error" if reject else "none",
+    }
+
+
+def _buddy_factor_bundle(row: dict[str, Any], calibration: dict[str, Any]) -> dict[str, Any]:
+    source_role = str(row.get("source_role", ""))
+    if source_role != "context_wind":
+        return {
+            "buddy_soft_factor": 1.0,
+            "buddy_ratio": 0.0,
+            "buddy_tolerance_mps": 0.0,
+            "buddy_reject": False,
+            "buddy_qc_reject_reason": "not_context",
+        }
+    neighbor_count = _safe_int(row.get("context_buddy_neighbor_count"), 0)
+    min_neighbors = max(0, int(round(_cal_float(calibration, "buddy_min_neighbors", 2.0))))
+    if neighbor_count < min_neighbors:
+        return {
+            "buddy_soft_factor": 1.0,
+            "buddy_ratio": 0.0,
+            "buddy_tolerance_mps": 0.0,
+            "buddy_reject": False,
+            "buddy_qc_reject_reason": "insufficient_neighbors",
+        }
+    innovation = max(0.0, _safe_float(row.get("context_buddy_innovation_mps"), 0.0))
+    local_spread = np.clip(
+        _safe_float(row.get("context_local_spread_mps"), 0.0),
+        _cal_float(calibration, "buddy_local_spread_min_mps", 2.0),
+        _cal_float(calibration, "buddy_local_spread_max_mps", 35.0),
+    )
+    sigma_o = max(1e-6, _safe_float(row.get("obs_error_sigma_vector_mps"), _safe_float(row.get("obs_error_sigma_mps"), 8.0)))
+    tol = max(1e-6, _cal_float(calibration, "buddy_k", 2.8) * math.sqrt(sigma_o**2 + float(local_spread) ** 2))
+    ratio = innovation / tol
+    if ratio <= 1.0:
+        factor = 1.0
+    else:
+        scale = max(1e-6, _cal_float(calibration, "buddy_soft_scale", 1.5))
+        min_factor = float(np.clip(_cal_float(calibration, "buddy_min_factor", 0.05), 0.0, 1.0))
+        factor = max(min_factor, math.exp(-0.5 * ((ratio - 1.0) / scale) ** 2))
+    reject = bool(calibration.get("buddy_enable_hard_reject", True)) and ratio >= _cal_float(calibration, "buddy_hard_ratio", 3.0)
+    return {
+        "buddy_soft_factor": float(np.clip(factor, 0.0, 1.0)),
+        "buddy_ratio": float(ratio),
+        "buddy_tolerance_mps": float(tol),
+        "buddy_reject": bool(reject),
+        "buddy_qc_reject_reason": "buddy" if reject else "none",
+    }
+
+
 def _build_wind_observations(
     train_current_wind: list[dict[str, Any]],
     context_wind: list[dict[str, Any]],
@@ -593,6 +767,9 @@ def _build_wind_observations(
     current_weight_boost: float = 1.0,
     context_weight_scale: float = 1.0,
     context_time_conf_power: float = 1.0,
+    cma_u: np.ndarray | None = None,
+    cma_v: np.ndarray | None = None,
+    cma_conf: np.ndarray | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     observations: list[dict[str, Any]] = []
     confidence_mode = str(confidence_mode)
@@ -616,6 +793,9 @@ def _build_wind_observations(
             diagnostic_multiplier = factors["combined_diagnostic_factor"] if use_diag else 1.0
             time_conf = _safe_float(row.get("time_conf"), 1.0)
             base_weight = max(0.0, time_conf) * float(obs_error["obs_error_weight_factor"]) * diagnostic_multiplier * current_weight_boost
+        elif confidence_mode == "oi_varqc_buddy_v1":
+            time_conf = _safe_float(row.get("time_conf"), 1.0)
+            base_weight = max(0.0, time_conf) * float(obs_error["obs_error_weight_factor"]) * current_weight_boost
         else:
             diagnostic_multiplier = (
                 factors["combined_diagnostic_factor"]
@@ -643,6 +823,10 @@ def _build_wind_observations(
                 **factors,
                 **obs_error,
                 **representation_soft,
+                "gamma_varqc": 1.0,
+                "buddy_soft_factor": 1.0,
+                "final_pre_robust_weight": max(0.05, base_weight),
+                "qc_reject_reason": "none",
             }
         )
     for row in context_wind:
@@ -654,6 +838,21 @@ def _build_wind_observations(
             source_role="context_wind",
             diagnostic_factors=factors,
         )
+        varqc = {
+            "gamma_varqc": 1.0,
+            "varqc_d": 0.0,
+            "varqc_innovation_mps": 0.0,
+            "varqc_background_valid": False,
+            "varqc_reject": False,
+            "varqc_qc_reject_reason": "not_active",
+        }
+        buddy = {
+            "buddy_soft_factor": 1.0,
+            "buddy_ratio": 0.0,
+            "buddy_tolerance_mps": 0.0,
+            "buddy_reject": False,
+            "buddy_qc_reject_reason": "not_active",
+        }
         if confidence_mode == "obs_error_weighted":
             use_diag = _safe_float(calibration.get("obs_error_use_diagnostic_factor"), 1.0) > 0.0
             diagnostic_multiplier = factors["combined_diagnostic_factor"] if use_diag else 1.0
@@ -667,10 +866,33 @@ def _build_wind_observations(
         time_power_factor = time_conf ** max(0.0, context_time_conf_power - 1.0) if time_conf > 0.0 else 0.0
         if confidence_mode == "obs_error_weighted":
             base_weight = time_conf * float(obs_error["obs_error_weight_factor"]) * diagnostic_multiplier * context_weight_scale * time_power_factor
+        elif confidence_mode == "oi_varqc_buddy_v1":
+            support_weight = _safe_float(row.get("support_weight"), float("nan"))
+            if math.isfinite(support_weight) and support_weight > 0.0 and _safe_float(calibration.get("stage2_support_weight_is_active_weight"), 1.0) > 0.0:
+                base_weight = support_weight * context_weight_scale * time_power_factor
+            else:
+                base_weight = _active_base_weight(row, default_time_conf=0.0) * diagnostic_multiplier * context_weight_scale * time_power_factor
+            row_for_qc = {
+                **row,
+                "u": _safe_float(row.get("u")),
+                "v": _safe_float(row.get("v")),
+                "obs_error_sigma_vector_mps": _safe_float(obs_error.get("obs_error_sigma_vector_mps"), 8.0),
+                "source_role": "context_wind",
+            }
+            varqc = _varqc_bundle(row_for_qc, cma_u=cma_u, cma_v=cma_v, cma_conf=cma_conf, calibration=calibration)
+            buddy = _buddy_factor_bundle(row_for_qc, calibration)
+            base_weight *= float(varqc["gamma_varqc"]) * float(buddy["buddy_soft_factor"])
         else:
             base_weight = _active_base_weight(row, default_time_conf=0.0) * diagnostic_multiplier * context_weight_scale * time_power_factor
             if confidence_mode == "representation_error_soft_weighted":
                 base_weight *= float(representation_soft["representation_error_soft_weight_factor"])
+        qc_reject_reason = "none"
+        if confidence_mode == "oi_varqc_buddy_v1" and bool(varqc.get("varqc_reject")):
+            qc_reject_reason = str(varqc.get("varqc_qc_reject_reason", "gross_error"))
+            base_weight = 0.0
+        if confidence_mode == "oi_varqc_buddy_v1" and qc_reject_reason == "none" and bool(buddy.get("buddy_reject")):
+            qc_reject_reason = str(buddy.get("buddy_qc_reject_reason", "buddy"))
+            base_weight = 0.0
         observations.append(
             {
                 "source_role": "context_wind",
@@ -687,9 +909,18 @@ def _build_wind_observations(
                 "qc_flags": str(row.get("qc_flags", "ok") or "ok"),
                 "role_weight_multiplier": context_weight_scale,
                 "context_time_conf_power": context_time_conf_power,
+                "support_group_id": str(row.get("support_group_id", "")),
+                "support_weight": _safe_float(row.get("support_weight"), 0.0),
+                "context_buddy_innovation_mps": _safe_float(row.get("context_buddy_innovation_mps"), 0.0),
+                "context_local_spread_mps": _safe_float(row.get("context_local_spread_mps"), 0.0),
+                "context_buddy_neighbor_count": _safe_int(row.get("context_buddy_neighbor_count"), 0),
+                "final_pre_robust_weight": max(0.0, base_weight),
+                "qc_reject_reason": qc_reject_reason,
                 **factors,
                 **obs_error,
                 **representation_soft,
+                **varqc,
+                **buddy,
             }
         )
     filtered = [
@@ -730,6 +961,11 @@ def _build_wind_observations(
                 if str(row.get("source_role")) == "context_wind"
             ]
         ),
+        "gamma_varqc_stats": _factor_stats([row.get("gamma_varqc", 1.0) for row in filtered]),
+        "buddy_soft_factor_stats": _factor_stats([row.get("buddy_soft_factor", 1.0) for row in filtered]),
+        "varqc_gross_reject_count": int(sum(1 for row in observations if row.get("qc_reject_reason") == "gross_error")),
+        "buddy_reject_count": int(sum(1 for row in observations if row.get("qc_reject_reason") == "buddy")),
+        "context_qc_reject_count": int(sum(1 for row in observations if str(row.get("source_role")) == "context_wind" and row.get("qc_reject_reason") != "none")),
         "qc_flags_counts": _qc_counts(filtered),
         "qc_calibration": calibration,
         "representation_error_soft_weight_changes_reconstruction": confidence_mode == "representation_error_soft_weighted",
@@ -1721,6 +1957,9 @@ def _accumulate_localized(
     acc_context_u = np.zeros(shape, dtype=np.float32)
     acc_context_v = np.zeros(shape, dtype=np.float32)
     acc_context_w = np.zeros(shape, dtype=np.float32)
+    acc_context_u2 = np.zeros(shape, dtype=np.float32)
+    acc_context_v2 = np.zeros(shape, dtype=np.float32)
+    acc_context_group_w = np.zeros(shape, dtype=np.float32)
     acc_context_time = np.zeros(shape, dtype=np.float32)
     acc_context_space = np.zeros(shape, dtype=np.float32)
     conflict_context_w = np.zeros(shape, dtype=np.float32)
@@ -1951,6 +2190,9 @@ def _accumulate_localized(
             acc_context_u[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * local_w
             acc_context_v[z0:z1, y0:y1, x0:x1] += np.float32(row["v"]) * local_w
             acc_context_w[z0:z1, y0:y1, x0:x1] += local_w
+            acc_context_u2[z0:z1, y0:y1, x0:x1] += np.float32(row["u"]) * np.float32(row["u"]) * local_w
+            acc_context_v2[z0:z1, y0:y1, x0:x1] += np.float32(row["v"]) * np.float32(row["v"]) * local_w
+            acc_context_group_w[z0:z1, y0:y1, x0:x1] += (local_w > 0.0).astype(np.float32)
             acc_context_time[z0:z1, y0:y1, x0:x1] += np.float32(row["time_conf"]) * local_w
             acc_context_space[z0:z1, y0:y1, x0:x1] += localization * local_w
 
@@ -2052,6 +2294,9 @@ def _accumulate_localized(
         "source_mask": source_mask,
         "acc_current_w": acc_current_w,
         "acc_context_w": acc_context_w,
+        "acc_context_u2": acc_context_u2,
+        "acc_context_v2": acc_context_v2,
+        "acc_context_group_w": acc_context_group_w,
         "acc_context_time": acc_context_time,
         "role_conflict_mask": role_conflict_mask,
         "conflict_context_w": conflict_context_w,
@@ -2371,6 +2616,21 @@ def _scalar_npz_text(value: Any) -> str:
 def _find_cma_proxy_npz(cma_proxy_dir: Path | None, frame_time: str) -> Path | None:
     if cma_proxy_dir is None:
         return None
+    manifest_path = cma_proxy_dir / "raw_grib" / "gfs_historical_aws_manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = _load_json(manifest_path)
+            groups = manifest.get("groups", []) if isinstance(manifest, dict) else []
+            for group in groups:
+                if not isinstance(group, dict):
+                    continue
+                if str(frame_time) in {str(value) for value in group.get("frame_times", [])}:
+                    source_stem = str(group.get("source_stem", "")).strip()
+                    candidate = cma_proxy_dir / "cache_npz" / f"{source_stem}.npz"
+                    if source_stem and candidate.exists():
+                        return candidate
+        except Exception:
+            pass
     candidates = [
         cma_proxy_dir / f"cma_ra_virtual_radial_3dvar_{frame_time}.npz",
         cma_proxy_dir / f"{frame_time}.npz",
@@ -2412,31 +2672,80 @@ def _load_cma_background(
         raise ValueError(f"Unsupported cma_qc_gating={qc_gating}; choose {sorted(CMA_QC_GATING_MODES)}")
     calibration = qc_calibration or DEFAULT_QC_CALIBRATION
     with np.load(path, allow_pickle=True) as z:
-        if fusion_mode == "cma_proxy_background":
+        if "u" in z.files and "v" in z.files and "lat" in z.files and "lon" in z.files and "alt_km" in z.files:
+            u_roi = np.asarray(z["u"], dtype=np.float32)
+            v_roi = np.asarray(z["v"], dtype=np.float32)
+            lat = np.asarray(z["lat"], dtype=np.float32)
+            lon = np.asarray(z["lon"], dtype=np.float32)
+            alt_m = np.asarray(z["alt_km"], dtype=np.float32) * np.float32(1000.0)
+            z_dim, h_dim, w_dim = shape
+            grid_lat = np.linspace(LAT_MAX, LAT_MIN, h_dim, dtype=np.float32)
+            grid_lon = np.linspace(LON_MIN, LON_MAX, w_dim, dtype=np.float32)
+            grid_alt = (ALT_MIN + np.arange(z_dim, dtype=np.float32) * np.float32(DELTA_ALT)).astype(np.float32)
+            zi = np.abs(alt_m[:, None] - grid_alt[None, :]).argmin(axis=0)
+            yi = np.abs(lat[:, None] - grid_lat[None, :]).argmin(axis=0)
+            xi = np.abs(lon[:, None] - grid_lon[None, :]).argmin(axis=0)
+            u = u_roi[np.asarray(zi, dtype=np.int64)[:, None, None], np.asarray(yi, dtype=np.int64)[None, :, None], np.asarray(xi, dtype=np.int64)[None, None, :]].astype(np.float32)
+            v = v_roi[np.asarray(zi, dtype=np.int64)[:, None, None], np.asarray(yi, dtype=np.int64)[None, :, None], np.asarray(xi, dtype=np.int64)[None, None, :]].astype(np.float32)
+            conf = np.ones(shape, dtype=np.float32)
+            meta = {
+                "cma_fusion_mode": fusion_mode,
+                "cma_proxy_npz": str(path),
+                "cma_field_u_key": "u",
+                "cma_field_v_key": "v",
+                "cma_confidence_source": "dense",
+                "cma_pseudo_source": pseudo_source,
+                "cma_qc_gating": qc_gating,
+                "cma_time_str": _scalar_npz_text(z["time_str"]) if "time_str" in z.files else "",
+                "cma_time_method": "gfs_roi_nearest_grid_projection",
+                "background_product_type": "forecast",
+                "background_independent_of_holdout": True,
+                "background_projection": "nearest_neighbor_lat_lon_alt_to_stage4_grid",
+                "background_source": _scalar_npz_text(z["source"]) if "source" in z.files else "gfs_roi_npz",
+                "background_cycle": _scalar_npz_text(z["cycle"]) if "cycle" in z.files else "",
+                "background_forecast_hour": int(np.asarray(z["forecast_hour"]).item()) if "forecast_hour" in z.files else None,
+                "cma_effective_conf_mean": 1.0,
+                "cma_effective_conf_p01": 1.0,
+            }
+        elif fusion_mode == "cma_proxy_background":
             u_key, v_key = "u_proxy_3d", "v_proxy_3d"
         elif fusion_mode == "cma_pseudo_observation" and pseudo_source == "proxy":
             u_key, v_key = "u_proxy_3d", "v_proxy_3d"
         else:
             u_key, v_key = "u_cma_3d", "v_cma_3d"
-        if u_key not in z.files or v_key not in z.files:
-            raise KeyError(f"CMA NPZ {path} is missing {u_key}/{v_key}")
-        u = np.asarray(z[u_key], dtype=np.float32)
-        v = np.asarray(z[v_key], dtype=np.float32)
-        if confidence_source == "coverage_conf" and "coverage_conf_3d" in z.files:
-            conf = np.clip(np.asarray(z["coverage_conf_3d"], dtype=np.float32), 0.0, 1.0)
-        elif confidence_source == "temporal_conf" and "cma_temporal_conf_3d" in z.files:
-            conf = np.clip(np.asarray(z["cma_temporal_conf_3d"], dtype=np.float32), 0.0, 1.0)
-        elif confidence_source == "coverage_temporal_conf" and "coverage_conf_3d" in z.files and "cma_temporal_conf_3d" in z.files:
-            conf = np.clip(
-                np.asarray(z["coverage_conf_3d"], dtype=np.float32)
-                * np.asarray(z["cma_temporal_conf_3d"], dtype=np.float32),
-                0.0,
-                1.0,
-            )
-        elif confidence_source == "dense":
-            conf = np.ones(shape, dtype=np.float32)
-        else:
-            raise ValueError(f"Unsupported cma_confidence_source={confidence_source}; choose {sorted(CMA_CONFIDENCE_SOURCES)}")
+        if "u" not in z.files or "v" not in z.files or "lat" not in z.files or "lon" not in z.files or "alt_km" not in z.files:
+            if u_key not in z.files or v_key not in z.files:
+                raise KeyError(f"CMA NPZ {path} is missing {u_key}/{v_key}")
+            u = np.asarray(z[u_key], dtype=np.float32)
+            v = np.asarray(z[v_key], dtype=np.float32)
+            if confidence_source == "coverage_conf" and "coverage_conf_3d" in z.files:
+                conf = np.clip(np.asarray(z["coverage_conf_3d"], dtype=np.float32), 0.0, 1.0)
+            elif confidence_source == "temporal_conf" and "cma_temporal_conf_3d" in z.files:
+                conf = np.clip(np.asarray(z["cma_temporal_conf_3d"], dtype=np.float32), 0.0, 1.0)
+            elif confidence_source == "coverage_temporal_conf" and "coverage_conf_3d" in z.files and "cma_temporal_conf_3d" in z.files:
+                conf = np.clip(
+                    np.asarray(z["coverage_conf_3d"], dtype=np.float32)
+                    * np.asarray(z["cma_temporal_conf_3d"], dtype=np.float32),
+                    0.0,
+                    1.0,
+                )
+            elif confidence_source == "dense":
+                conf = np.ones(shape, dtype=np.float32)
+            else:
+                raise ValueError(f"Unsupported cma_confidence_source={confidence_source}; choose {sorted(CMA_CONFIDENCE_SOURCES)}")
+            meta: dict[str, Any] = {
+                "cma_fusion_mode": fusion_mode,
+                "cma_proxy_npz": str(path),
+                "cma_field_u_key": u_key,
+                "cma_field_v_key": v_key,
+                "cma_confidence_source": confidence_source,
+                "cma_pseudo_source": pseudo_source,
+                "cma_qc_gating": qc_gating,
+                "cma_qc_temporal_conf_already_in_source": bool(qc_gating == "temporal_change" and confidence_source in {"temporal_conf", "coverage_temporal_conf"}),
+                "cma_rapid_change_qc_factor": float(CMA_RAPID_CHANGE_QC_FACTOR),
+                "cma_time_str": _scalar_npz_text(z["cma_time_str"]) if "cma_time_str" in z.files else "",
+                "cma_time_method": _scalar_npz_text(z["cma_time_method"]) if "cma_time_method" in z.files else "",
+            }
         rapid_change = np.zeros(shape, dtype=np.float32)
         temporal_change = np.zeros(shape, dtype=np.float32)
         temporal_conf = None
@@ -2471,19 +2780,6 @@ def _load_cma_background(
                 rapid_ok &= np.asarray(temporal_change, dtype=np.float32) <= max_temporal_change
             strict_temporal_gate = temporal_ok & rapid_ok
             conf = np.where(strict_temporal_gate, conf, 0.0).astype(np.float32)
-        meta: dict[str, Any] = {
-            "cma_fusion_mode": fusion_mode,
-            "cma_proxy_npz": str(path),
-            "cma_field_u_key": u_key,
-            "cma_field_v_key": v_key,
-            "cma_confidence_source": confidence_source,
-            "cma_pseudo_source": pseudo_source,
-            "cma_qc_gating": qc_gating,
-            "cma_qc_temporal_conf_already_in_source": bool(qc_gating == "temporal_change" and confidence_source in {"temporal_conf", "coverage_temporal_conf"}),
-            "cma_rapid_change_qc_factor": float(CMA_RAPID_CHANGE_QC_FACTOR),
-            "cma_time_str": _scalar_npz_text(z["cma_time_str"]) if "cma_time_str" in z.files else "",
-            "cma_time_method": _scalar_npz_text(z["cma_time_method"]) if "cma_time_method" in z.files else "",
-        }
         if strict_temporal_gate is not None:
             meta["cma_strict_min_temporal_conf"] = float(_cal_float(calibration, "cma_strict_min_temporal_conf", 0.55))
             meta["cma_strict_max_temporal_change_mps"] = float(_cal_float(calibration, "cma_strict_max_temporal_change_mps", 8.0))
@@ -2622,11 +2918,57 @@ def _cap_cma_only_confidence(
     return capped
 
 
-def _make_reconstruction(acc: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+def _make_reconstruction(acc: dict[str, np.ndarray], qc_calibration: dict[str, Any] | None = None, confidence_mode: str = "") -> dict[str, np.ndarray]:
     weight = acc["acc_w"]
     mask = weight > 0
     recon_u = np.divide(acc["acc_u"], np.maximum(weight, 1e-6), out=np.zeros_like(weight), where=mask).astype(np.float32)
     recon_v = np.divide(acc["acc_v"], np.maximum(weight, 1e-6), out=np.zeros_like(weight), where=mask).astype(np.float32)
+    robust_mask = np.zeros_like(mask, dtype=bool)
+    robust_iterations = 0
+    if str(confidence_mode) == "oi_varqc_buddy_v1":
+        calibration = qc_calibration or DEFAULT_QC_CALIBRATION
+        if bool(calibration.get("robust_context_only_enabled", True)):
+            current_w = np.asarray(acc.get("acc_current_w"), dtype=np.float32)
+            context_w = np.asarray(acc.get("acc_context_w"), dtype=np.float32)
+            context_groups = np.asarray(acc.get("acc_context_group_w"), dtype=np.float32)
+            context_u = np.divide(
+                np.asarray(acc.get("acc_context_u", np.zeros_like(weight)), dtype=np.float32),
+                np.maximum(context_w, 1e-6),
+                out=np.zeros_like(weight),
+                where=context_w > 0,
+            )
+            context_v = np.divide(
+                np.asarray(acc.get("acc_context_v", np.zeros_like(weight)), dtype=np.float32),
+                np.maximum(context_w, 1e-6),
+                out=np.zeros_like(weight),
+                where=context_w > 0,
+            )
+            context_u2 = np.divide(
+                np.asarray(acc.get("acc_context_u2", np.zeros_like(weight)), dtype=np.float32),
+                np.maximum(context_w, 1e-6),
+                out=np.zeros_like(weight),
+                where=context_w > 0,
+            )
+            context_v2 = np.divide(
+                np.asarray(acc.get("acc_context_v2", np.zeros_like(weight)), dtype=np.float32),
+                np.maximum(context_w, 1e-6),
+                out=np.zeros_like(weight),
+                where=context_w > 0,
+            )
+            spread = np.sqrt(np.maximum(context_u2 - context_u**2, 0.0) + np.maximum(context_v2 - context_v**2, 0.0)).astype(np.float32)
+            robust_mask = (
+                mask
+                & (current_w <= 0.0)
+                & (context_w >= np.float32(_cal_float(calibration, "robust_min_context_weight", 0.05)))
+                & (context_groups >= np.float32(_cal_float(calibration, "robust_min_context_groups", 2.0)))
+                & (spread >= np.float32(_cal_float(calibration, "robust_context_spread_hi_mps", 18.0)))
+            )
+            if np.any(robust_mask):
+                delta = np.float32(max(1e-6, _cal_float(calibration, "robust_huber_delta_mps", 18.0)))
+                shrink = np.clip(delta / np.maximum(spread, delta), 0.0, 1.0).astype(np.float32)
+                recon_u = np.where(robust_mask, context_u + shrink * (recon_u - context_u), recon_u).astype(np.float32)
+                recon_v = np.where(robust_mask, context_v + shrink * (recon_v - context_v), recon_v).astype(np.float32)
+                robust_iterations = 1
     c_time = np.divide(acc["acc_time"], np.maximum(weight, 1e-6), out=np.zeros_like(weight), where=mask).astype(np.float32)
     c_space = np.divide(acc["acc_space"], np.maximum(weight, 1e-6), out=np.zeros_like(weight), where=mask).astype(np.float32)
     recon_conf = _normalize_confidence(weight)
@@ -2642,6 +2984,9 @@ def _make_reconstruction(acc: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         "c_joint": recon_conf,
         "blindzone_initialized": blindzone_initialized,
         "weight": weight,
+        "robust_context_only_mask": robust_mask.astype(np.float32),
+        "robust_context_only_voxels": int(np.count_nonzero(robust_mask)),
+        "robust_context_only_iterations": int(robust_iterations),
     }
 
 
@@ -3550,6 +3895,13 @@ def _point_eval_rows(
             radius_xy=1,
             radius_z=1,
         )
+        rep_eq_min_error = float(neighborhood_stats.get("point_neighbor_min_vector_error", float("nan")))
+        if not math.isfinite(rep_eq_min_error):
+            rep_eq_min_error = vector_error
+        rep_eq_weighted_error = float(neighborhood_stats.get("point_neighbor_weighted_vector_error", float("nan")))
+        if not math.isfinite(rep_eq_weighted_error):
+            rep_eq_weighted_error = vector_error
+        rep_eq_local_sigma = float(neighborhood_stats.get("point_neighbor_std_vector_error", float("nan")))
         qc_review_flag, qc_review_reasons = _point_qc_review(
             vector_error=vector_error,
             gt_speed=gt_speed,
@@ -3594,6 +3946,11 @@ def _point_eval_rows(
             "vertical_speed_gap_mps": vertical_speed_gap,
             "vertical_neighbor_max_speed_mps": vertical_neighbor_max_speed,
             **neighborhood_stats,
+            "representation_equivalent_error_r1_min_mps": rep_eq_min_error,
+            "representation_equivalent_error_r1_weighted_mps": rep_eq_weighted_error,
+            "representation_equivalent_gain_r1_min_mps": max(0.0, vector_error - rep_eq_min_error),
+            "representation_equivalent_gain_r1_weighted_mps": max(0.0, vector_error - rep_eq_weighted_error),
+            "representation_equivalent_local_sigma_r1_mps": rep_eq_local_sigma,
             **role_context,
             "qc_review_flag": qc_review_flag,
             "qc_review_reasons": qc_review_reasons,
@@ -3612,6 +3969,8 @@ def _metric_summary(rows: list[dict[str, Any]]) -> dict[str, float]:
             "mae_v": 0.0,
             "mae_vector": 0.0,
             "rmse_vector": 0.0,
+            "p95_vector": 0.0,
+            "max_vector": 0.0,
             "bias_u": 0.0,
             "bias_v": 0.0,
         }
@@ -3625,6 +3984,8 @@ def _metric_summary(rows: list[dict[str, Any]]) -> dict[str, float]:
         "mae_v": float(np.mean(abs_v)),
         "mae_vector": float(np.mean(vec)),
         "rmse_vector": float(np.sqrt(np.mean(vec**2))),
+        "p95_vector": float(np.percentile(vec, 95.0)),
+        "max_vector": float(np.max(vec)),
         "bias_u": float(np.mean(u_err)),
         "bias_v": float(np.mean(v_err)),
     }
@@ -3672,6 +4033,11 @@ def _write_point_eval_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "point_neighbor_weighted_vector_error",
         "point_neighbor_std_vector_error",
         "representativeness_gap_point_minus_min_mps",
+        "representation_equivalent_error_r1_min_mps",
+        "representation_equivalent_error_r1_weighted_mps",
+        "representation_equivalent_gain_r1_min_mps",
+        "representation_equivalent_gain_r1_weighted_mps",
+        "representation_equivalent_local_sigma_r1_mps",
         "role_overlap_at_point",
         "role_conflict_at_point",
         "role_conflict_component_gap_at_point_mps",
@@ -3744,7 +4110,7 @@ def _write_method_md(
         "",
         "- `wind_records` are current-window true wind label candidates.",
         "- selected hold-out records are removed before fusion.",
-        "- only non-holdout current wind and historical `context_wind_records` are used as wind observations.",
+        "- only non-holdout current wind and Stage2 support/fusion `context_wind_records` are used as wind observations.",
         "- `motion_records` and `context_motion_records` are coverage diagnostics here; they are not treated as atmospheric wind truth.",
         "- optional CMA fusion, when enabled, is written as an explicit CMA-background candidate branch and is not the default strict baseline.",
         f"- leakage status: `{leakage_report.get('strict_holdout_no_leakage')}`.",
@@ -4003,6 +4369,7 @@ def process_frame(
     display_fill_source: str,
     display_fill_confidence_cap: float,
     display_fill_qc_gating: str,
+    context_view: str = "with_amdar",
 ) -> dict[str, Any]:
     npz_path = Path(stage2_row["multimodal_vox_path"])
     npz = _load_stage2_npz(npz_path)
@@ -4012,13 +4379,31 @@ def process_frame(
     meta = json.loads(str(npz[C2_MULTIMODAL_META_JSON])) if C2_MULTIMODAL_META_JSON in npz else {}
 
     wind_records = _records(npz.get(C2_WIND_RECORDS))
-    context_wind_records = _records(npz.get(C2_CONTEXT_WIND_RECORDS))
+    context_view = str(context_view)
+    context_key = C2_CONTEXT_WIND_RECORDS
+    if context_view == "no_amdar" and "context_wind_records_no_amdar" in npz:
+        context_key = "context_wind_records_no_amdar"
+    elif context_view not in {"with_amdar", "no_amdar"}:
+        raise ValueError(f"Unsupported context_view={context_view}; choose ['with_amdar', 'no_amdar']")
+    context_wind_records = _records(npz.get(context_key))
     motion_records = _records(npz.get(C2_MOTION_RECORDS))
     context_motion_records = _records(npz.get(C2_CONTEXT_MOTION_RECORDS))
     loc_records = _records(npz.get(C2_LOC_RECORDS))
     cloud_2d = np.asarray(npz[C2_CLOUD_2D], dtype=np.float32)
 
     train_wind, holdout_wind = _split_holdout(wind_records, holdout_fraction, holdout_count)
+    cma_path = cma_proxy_npz
+    if cma_path is None:
+        cma_path = _find_cma_proxy_npz(cma_proxy_dir, time_str)
+    cma_u, cma_v, cma_conf, cma_fusion_diagnostics = _load_cma_background(
+        cma_path,
+        shape,
+        fusion_mode=cma_fusion_mode,
+        confidence_source=cma_confidence_source,
+        pseudo_source=cma_pseudo_source,
+        qc_gating=cma_qc_gating,
+        qc_calibration=qc_calibration,
+    )
     observations, confidence_diagnostics = _build_wind_observations(
         train_wind,
         context_wind_records,
@@ -4027,6 +4412,9 @@ def process_frame(
         current_weight_boost=current_weight_boost,
         context_weight_scale=context_weight_scale,
         context_time_conf_power=context_time_conf_power,
+        cma_u=cma_u,
+        cma_v=cma_v,
+        cma_conf=cma_conf,
     )
     adaptive_diagnostics: dict[str, Any] = {
         "localization_policy": str(localization_policy),
@@ -4099,18 +4487,6 @@ def process_frame(
     vertical_localization_diagnostics = dict(acc.get("vertical_localization_scalar_diagnostics", {}))
     srha_horizontal_diagnostics = dict(acc.get("srha_horizontal_scalar_diagnostics", {}))
     point_regime_localization_diagnostics = dict(acc.get("point_regime_localization_scalar_diagnostics", {}))
-    cma_path = cma_proxy_npz
-    if cma_path is None:
-        cma_path = _find_cma_proxy_npz(cma_proxy_dir, time_str)
-    cma_u, cma_v, cma_conf, cma_fusion_diagnostics = _load_cma_background(
-        cma_path,
-        shape,
-        fusion_mode=cma_fusion_mode,
-        confidence_source=cma_confidence_source,
-        pseudo_source=cma_pseudo_source,
-        qc_gating=cma_qc_gating,
-        qc_calibration=qc_calibration,
-    )
     if str(cma_fusion_mode) != "off":
         cma_fusion_diagnostics.update(
             _apply_cma_background_to_accumulator(
@@ -4136,7 +4512,7 @@ def process_frame(
         cma_proxy_npz=str(cma_path or ""),
         background_independent_of_holdout=background_independent_of_holdout,
     )
-    recon = _make_reconstruction(acc)
+    recon = _make_reconstruction(acc, qc_calibration=qc_calibration, confidence_mode=confidence_mode)
     recon = _cap_cma_only_confidence(recon, acc, cma_confidence_cap=float(cma_confidence_cap))
     pre_refine_voxels = int(np.count_nonzero(recon["recon_mask"]))
     recon, refine_metrics = _pinn_diffusion_refine(
@@ -4174,6 +4550,13 @@ def process_frame(
     field_diagnostics = _field_proxy_diagnostics(recon)
     role_conflict_diagnostics = _role_conflict_diagnostics(acc)
     method_metrics = {**metrics, **refine_metrics}
+    robust_diagnostics = {
+        "robust_context_only_enabled": bool(qc_calibration.get("robust_context_only_enabled", True))
+        and str(confidence_mode) == "oi_varqc_buddy_v1",
+        "robust_context_only_voxels": int(recon.get("robust_context_only_voxels", 0)),
+        "robust_context_only_iterations": int(recon.get("robust_context_only_iterations", 0)),
+        "robust_context_only_uses_holdout_truth": False,
+    }
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"frame_{time_str}_center_strict.npz"
@@ -4182,6 +4565,8 @@ def process_frame(
         "holdout_wind_records": len(holdout_wind),
         "fusion_current_wind_records": len(train_wind),
         "context_wind_records": len(context_wind_records),
+        "context_view": context_view,
+        "context_wind_records_key": context_key,
         "fusion_wind_observations_total": len(observations),
         "trajectory_records": len(loc_records),
         "motion_records_diagnostic_only": len(motion_records),
@@ -4208,11 +4593,13 @@ def process_frame(
         "adaptive_reasons": str(adaptive_diagnostics["adaptive_reasons"]),
         "adaptive_no_holdout_inputs_used": bool(adaptive_diagnostics["adaptive_no_holdout_inputs_used"]),
         "confidence_mode": str(confidence_mode),
+        "context_view": context_view,
         "active_weight": {
             "diagnostic_only": "obs_conf * time_conf * target_voxel_localization",
             "diagnostic_weighted": "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors",
             "obs_error_weighted": "time_conf * aircraft_wind_obs_error_or_representativeness_prior_weight * target_voxel_localization * optional_diagnostic_confidence_factors",
             "representation_error_soft_weighted": "obs_conf * time_conf * target_voxel_localization * diagnostic_confidence_factors * truth_free_representation_error_soft_weight",
+            "oi_varqc_buddy_v1": "stage2 support_weight * target_voxel_localization * background innovation VarQC * adaptive buddy factor; current TURB train is not gross/buddy rejected",
         }.get(str(confidence_mode), str(confidence_mode)),
         "motion_as_wind": False,
         "pinn_diffusion_refine": bool(refine_metrics.get("pinn_diffusion_refine_enabled", 0.0)),
@@ -4330,6 +4717,7 @@ def process_frame(
         "cma_fusion_diagnostics": cma_fusion_diagnostics,
         "display_fill_diagnostics": display_fill_diagnostics,
         "reliability_diagnostics": reliability_diagnostics,
+        "robust_diagnostics": robust_diagnostics,
         "refine_metrics": refine_metrics,
         "pressure_test_note": pressure_test_note,
     }
@@ -4361,6 +4749,7 @@ def process_frame(
             "stage4_role_conflict_component_gap_3d": np.asarray(acc["role_conflict_component_gap"], dtype=np.float32),
             "stage4_role_conflict_threshold_3d": np.asarray(acc["role_conflict_threshold_field"], dtype=np.float32),
             "stage4_role_conflict_context_factor_3d": np.asarray(acc["role_conflict_context_factor_field"], dtype=np.float32),
+            "stage4_robust_context_only_mask_3d": np.asarray(recon.get("robust_context_only_mask", np.zeros(shape, dtype=np.float32)), dtype=np.float32),
             "stage4_method_json": np.array(json.dumps(method_json, ensure_ascii=False)),
             "stage4_refine_metrics_json": np.array(json.dumps(refine_metrics, ensure_ascii=False)),
             "stage4_confidence_diagnostics_json": np.array(json.dumps(confidence_diagnostics, ensure_ascii=False)),
@@ -4416,6 +4805,11 @@ def process_frame(
         **counts,
         **extent_stats,
         **metrics,
+        "holdout_points": int(len(point_rows)),
+        "point_rmse": metrics.get("rmse_vector"),
+        "point_mae": metrics.get("mae_vector"),
+        "point_p95": metrics.get("p95_vector"),
+        "point_max": metrics.get("max_vector"),
         **refine_metrics,
         **field_diagnostics,
         **role_conflict_diagnostics,
@@ -4494,6 +4888,7 @@ def process_frame(
         "leakage_report": leakage_report,
         "strict_holdout_no_leakage": True,
         "motion_used_as_wind": False,
+        "motion_as_wind": False,
         "blindzone_background_source": f"{localization_kernel}_target_voxel_localization",
         "stage3_agent_path": stage3_row.get("agent_path", ""),
     }
@@ -4571,6 +4966,8 @@ def _run_parent_shards(args: argparse.Namespace, selected: list[dict[str, Any]])
             str(args.localization_candidate_grid),
             "--confidence-mode",
             str(args.confidence_mode),
+            "--context-view",
+            str(args.context_view),
             "--refine-iters",
             str(args.refine_iters),
             "--pinn-smoothness-weight",
@@ -4690,6 +5087,7 @@ def main() -> None:
     parser.add_argument("--localization-policy", choices=sorted(LOCALIZATION_POLICIES), default="fixed")
     parser.add_argument("--localization-candidate-grid", default="6:3,8:4,10:5,12:6")
     parser.add_argument("--confidence-mode", choices=sorted(CONFIDENCE_MODES), default="diagnostic_only")
+    parser.add_argument("--context-view", choices=["with_amdar", "no_amdar"], default="with_amdar")
     parser.add_argument("--qc-calibration", type=Path)
     parser.add_argument("--refine-iters", type=int, default=4)
     parser.add_argument("--pinn-smoothness-weight", type=float, default=0.018)
@@ -4760,7 +5158,10 @@ def main() -> None:
         return
 
     stage3_rows = {str(row["time_str"]): row for row in stage3_rows_all}
-    qc_calibration = _load_qc_calibration(args.qc_calibration)
+    qc_path = args.qc_calibration
+    if qc_path is None and str(args.confidence_mode) == "oi_varqc_buddy_v1" and OI_VARQC_BUDDY_POLICY_PATH.exists():
+        qc_path = OI_VARQC_BUDDY_POLICY_PATH
+    qc_calibration = _load_qc_calibration(qc_path)
     summaries = []
     for stage2_row in sorted(stage2_rows_all, key=lambda row: str(row["time_str"])):
         time_str = str(stage2_row["time_str"])
@@ -4781,6 +5182,7 @@ def main() -> None:
                 localization_policy=str(args.localization_policy),
                 localization_candidate_grid=str(args.localization_candidate_grid),
                 confidence_mode=str(args.confidence_mode),
+                context_view=str(args.context_view),
                 qc_calibration=qc_calibration,
                 refine_iters=int(args.refine_iters),
                 pinn_smoothness_weight=float(args.pinn_smoothness_weight),

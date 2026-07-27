@@ -1,0 +1,115 @@
+{
+  "generated_at_utc": "2026-07-15T09:55:52.518363+00:00",
+  "scope": "Large-framework Stage5 v6 HMM/Viterbi sequence scorer; frozen v5 candidate universe.",
+  "run_config": {
+    "out_dir": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715",
+    "slice_count": 25,
+    "workers": 25,
+    "candidate_topk": 10,
+    "posterior_threshold": 0.805,
+    "unique_margin_min": 1.5,
+    "unique_candidate_posterior_min": 0.9,
+    "mixture_candidate_posterior_min": 0.55,
+    "max_best_cost": 3.0,
+    "max_cross_track_q90_km": 1.5,
+    "max_vertical_q90_m": 800.0,
+    "max_sampling_gap_seconds": 900.0,
+    "max_after_batch_end_seconds": 180.0
+  },
+  "run_policy": {
+    "POLARS_MAX_THREADS": 25,
+    "slice_count": 25,
+    "workers": 25,
+    "space_policy": "One compact candidate score table and one combined match table; one reused ADS-B point table; no 25 full copies."
+  },
+  "inputs": {
+    "stage5_v5_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage5_v5_final_optimized_20260714/stage5_v5",
+    "stage3_v11_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage3_pseudo_amdar_v11_domain_matched_optimized_20260715_validated/stage3_pseudo_amdar_v11",
+    "stage4_v3_components": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/amdar_confidence_components_v3.parquet",
+    "stage2_v4_adsb_points": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_unified_stage0_1_2_optimized_20260701/stage2_adsb_qc_v4/adsb_leg_points_v4.parquet"
+  },
+  "target_scope": {
+    "v5_monotonic_reject_batches": 51687,
+    "candidate_rows_evaluated": 18055,
+    "candidate_legs_loaded": 109898,
+    "adsb_point_rows_loaded": 863171
+  },
+  "result": {
+    "baseline_unique_batches": 198,
+    "baseline_rows": 251,
+    "incremental_unique_batches": 7,
+    "incremental_unique_rows": 23,
+    "ambiguous_mixture_batches": 20,
+    "final_unique_batches": 205,
+    "final_unique_rows": 274,
+    "accepted_by_orientation": {
+      "forward": 7
+    },
+    "accepted_by_alignment_mode": {
+      "full_hmm_viterbi": 6,
+      "partial_monotone_70pct": 1
+    },
+    "mixture_by_orientation": {
+      "forward": 20
+    },
+    "unique_cost_summary": {
+      "present": true,
+      "rows": 7,
+      "finite_rows": 7,
+      "min": 0.24054453281134552,
+      "q50": 0.8698773454162783,
+      "p90": 1.01484333108775,
+      "p99": 1.0677956248496236,
+      "max": 1.0677956248496236
+    },
+    "unique_posterior_summary": {
+      "present": true,
+      "rows": 7,
+      "finite_rows": 7,
+      "min": 0.9411764705882353,
+      "q50": 0.964622641509434,
+      "p90": 0.9787735849056604,
+      "p99": 0.9882214370620416,
+      "max": 0.9882214370620416
+    }
+  },
+  "validation": {
+    "frozen_stage3_v11_posterior_threshold": 0.805,
+    "locked_selected_count": 4982,
+    "locked_wrong_leg_or_hard_negative_rate": 0.005820955439582497,
+    "interpretation": "Frozen Stage3 v11 locked-test proxy for the aggregate posterior gate; real AMDAR remains support-only and has no point-truth label."
+  },
+  "safety_checks": {
+    "stage3_v11_gate_passed": true,
+    "stage3_v11_locked_wrong_rate_le_1pct": true,
+    "baseline_198_batches_preserved": true,
+    "mixture_not_counted_as_unique": true,
+    "all_incremental_exact_identity": true,
+    "all_incremental_physical_gate": true,
+    "all_incremental_posterior_gate": true,
+    "truth_invariants_preserved": true,
+    "space_saving_policy_preserved": true,
+    "passed_stage5_v6_safety_gate": true
+  },
+  "merge_target_checks": {
+    "incremental_unique_ge_10": false,
+    "final_unique_batches_ge_208": false,
+    "locked_wrong_rate_le_1pct": true,
+    "baseline_preserved": true,
+    "passed_stage5_v6_merge_target": false
+  },
+  "stage6_allowed_mode": "conservative_diagnostic_only",
+  "truth_boundary": {
+    "amdar_effective_strict_truth_rows": 0,
+    "amdar_holdout_eligible_rows": 0,
+    "estimated_time_is_strict_point_truth": false,
+    "usage_role": "support_only_not_strict_truth"
+  },
+  "outputs": {
+    "candidate_scores": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715/stage5_v6/amdar_adsb_candidate_sequence_scores_v6.parquet",
+    "batch_diagnostics": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715/stage5_v6/amdar_adsb_batch_diagnostics_v6.parquet",
+    "incremental_match": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715/stage5_v6/amdar_adsb_match_incremental_v6.parquet",
+    "partial_row_diagnostics": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715/stage5_v6/amdar_adsb_partial_row_diagnostics_v6.parquet",
+    "combined_match": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715/stage5_v6/amdar_adsb_match_v6.parquet"
+  }
+}

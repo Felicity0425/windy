@@ -1,0 +1,352 @@
+{
+  "generated_at_utc": "2026-07-16T09:41:56.944538+00:00",
+  "scope": "Large-framework Stage3 v13 bridge-specific calibration, validation, and locked-test.",
+  "run_config": {
+    "stage2_dir": "优化/数据处理/stage2_v8_track_graph_optimized_20260716",
+    "out_dir": "优化/数据处理/stage3_v13_bridge_validation_optimized_20260716",
+    "slice_count": 25,
+    "workers": 25,
+    "max_base_tracklets": 15000,
+    "minimum_points": 12,
+    "seed": 20260716,
+    "POLARS_MAX_THREADS": "25"
+  },
+  "counts": {
+    "selected_base_tracklets": 15000,
+    "selected_state_rows": 231416,
+    "case_bank_rows": 151951,
+    "calibration_cases": 80971,
+    "validation_cases": 28381,
+    "locked_test_cases": 27599
+  },
+  "selected_policy": {
+    "posterior_threshold": 0.0005426103460326424,
+    "validation_true_accepts": 12412,
+    "validation_positive_recall": 1.0
+  },
+  "validation": {
+    "cases": 28381,
+    "positives": 12412,
+    "negatives": 15969,
+    "accepted": 12421,
+    "true_accepts": 12412,
+    "positive_recall": 1.0,
+    "wrong_tracklet_or_path_rate": 0.0007245793414378874,
+    "catastrophic_bridge_rate": 0.0005635919594213789,
+    "edge_posterior_ece": 0.00031478830547837326,
+    "path_posterior_ece": 0.00031478830547837326,
+    "max_corruption_false_acceptance_rate": 0.007246376811594203,
+    "corruption_report": [
+      {
+        "corruption_type": "altitude_spike",
+        "cases": 3103,
+        "accepted": 8,
+        "false_acceptance": 8,
+        "negative_cases": 3103,
+        "false_acceptance_rate": 0.002578150177247825
+      },
+      {
+        "corruption_type": "competing_fork_path",
+        "cases": 138,
+        "accepted": 1,
+        "false_acceptance": 1,
+        "negative_cases": 138,
+        "false_acceptance_rate": 0.007246376811594203
+      },
+      {
+        "corruption_type": "heading_discontinuity",
+        "cases": 3103,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3103,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "isolated_position_spike",
+        "cases": 3103,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3103,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "missing_middle_block",
+        "cases": 3103,
+        "accepted": 3103,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "physically_unreachable_bridge",
+        "cases": 3103,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3103,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reachable_bridge_long",
+        "cases": 3103,
+        "accepted": 3103,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reachable_bridge_medium",
+        "cases": 3103,
+        "accepted": 3103,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reachable_bridge_short",
+        "cases": 3103,
+        "accepted": 3103,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "same_identity_wrong_tracklet",
+        "cases": 138,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 138,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "timestamp_bias",
+        "cases": 3103,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3103,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "wrong_flight_same_tail_date",
+        "cases": 178,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 178,
+        "false_acceptance_rate": 0.0
+      }
+    ],
+    "hard_negative_report": [
+      {
+        "hard_negative_type": "competing_fork_path",
+        "cases": 138,
+        "false_acceptance": 1,
+        "false_acceptance_rate": 0.007246376811594203
+      },
+      {
+        "hard_negative_type": "same_identity_wrong_tracklet",
+        "cases": 138,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "hard_negative_type": "unreachable_bridge",
+        "cases": 3103,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "hard_negative_type": "wrong_flight_same_tail_date",
+        "cases": 178,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      }
+    ]
+  },
+  "locked_test": {
+    "cases": 27599,
+    "positives": 12088,
+    "negatives": 15511,
+    "accepted": 12098,
+    "true_accepts": 12088,
+    "positive_recall": 1.0,
+    "wrong_tracklet_or_path_rate": 0.0008265829062654984,
+    "catastrophic_bridge_rate": 0.0006447037586229128,
+    "edge_posterior_ece": 0.00032099102639520673,
+    "path_posterior_ece": 0.00032099102639520673,
+    "max_corruption_false_acceptance_rate": 0.008620689655172414,
+    "corruption_report": [
+      {
+        "corruption_type": "altitude_spike",
+        "cases": 3022,
+        "accepted": 9,
+        "false_acceptance": 9,
+        "negative_cases": 3022,
+        "false_acceptance_rate": 0.0029781601588352085
+      },
+      {
+        "corruption_type": "competing_fork_path",
+        "cases": 116,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 116,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "heading_discontinuity",
+        "cases": 3022,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3022,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "isolated_position_spike",
+        "cases": 3022,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3022,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "missing_middle_block",
+        "cases": 3022,
+        "accepted": 3022,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "physically_unreachable_bridge",
+        "cases": 3022,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3022,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reachable_bridge_long",
+        "cases": 3022,
+        "accepted": 3022,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reachable_bridge_medium",
+        "cases": 3022,
+        "accepted": 3022,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reachable_bridge_short",
+        "cases": 3022,
+        "accepted": 3022,
+        "false_acceptance": 0,
+        "negative_cases": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "same_identity_wrong_tracklet",
+        "cases": 116,
+        "accepted": 1,
+        "false_acceptance": 1,
+        "negative_cases": 116,
+        "false_acceptance_rate": 0.008620689655172414
+      },
+      {
+        "corruption_type": "timestamp_bias",
+        "cases": 3022,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 3022,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "wrong_flight_same_tail_date",
+        "cases": 169,
+        "accepted": 0,
+        "false_acceptance": 0,
+        "negative_cases": 169,
+        "false_acceptance_rate": 0.0
+      }
+    ],
+    "hard_negative_report": [
+      {
+        "hard_negative_type": "competing_fork_path",
+        "cases": 116,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "hard_negative_type": "same_identity_wrong_tracklet",
+        "cases": 116,
+        "false_acceptance": 1,
+        "false_acceptance_rate": 0.008620689655172414
+      },
+      {
+        "hard_negative_type": "unreachable_bridge",
+        "cases": 3022,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "hard_negative_type": "wrong_flight_same_tail_date",
+        "cases": 169,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      }
+    ]
+  },
+  "clean_no_bridge_retention": 1.0,
+  "model_comparison_locked": [
+    {
+      "model": "B0_no_bridge",
+      "brier_score": 0.4379868835827385,
+      "ece": 0.4379868835827385
+    },
+    {
+      "model": "B1_basic_physical",
+      "brier_score": 0.001558027464763216,
+      "ece": 0.0015580274647632292
+    },
+    {
+      "model": "B2_forward_residual",
+      "brier_score": 0.0004258762366560897,
+      "ece": 0.001597958422594307
+    },
+    {
+      "model": "B3_forward_backward",
+      "brier_score": 9.685952838744856e-05,
+      "ece": 0.0014313864305901891
+    },
+    {
+      "model": "B4_covariance_edge",
+      "brier_score": 7.959574187148589e-05,
+      "ece": 0.0012255778177525352
+    },
+    {
+      "model": "B5_calibrated_topk",
+      "brier_score": 2.644223386007917e-06,
+      "ece": 0.00032099102639520673
+    }
+  ],
+  "quality_gate": {
+    "wrong_tracklet_path_le_1pct": true,
+    "catastrophic_lt_3pct": true,
+    "edge_ece_le_0_05": true,
+    "path_ece_le_0_05": true,
+    "each_corruption_false_accept_le_2pct": true,
+    "same_identity_wrong_tracklet_le_1pct": true,
+    "unreachable_bridge_le_0_5pct": true,
+    "clean_no_bridge_not_degraded": true,
+    "truth_holdout_violations_zero": true,
+    "all_passed": true
+  },
+  "truth_semantics": {
+    "pseudo_truth_source": "ADS-B clean source tracklets only",
+    "amdar_used_as_truth": false,
+    "gap_prediction_is_observation": false,
+    "holdout_violations": 0
+  }
+}

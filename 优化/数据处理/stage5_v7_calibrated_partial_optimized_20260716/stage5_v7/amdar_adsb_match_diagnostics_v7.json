@@ -1,0 +1,104 @@
+{
+  "generated_at_utc": "2026-07-16T08:16:27.622532+00:00",
+  "scope": "Large-framework Stage5 v7 calibrated partial matcher; audit-first execution.",
+  "run_config": {
+    "out_dir": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716",
+    "slice_count": 25,
+    "workers": 25,
+    "candidate_topk": 10,
+    "max_cross_track_q90_km": 1.5,
+    "max_vertical_q90_m": 800.0,
+    "max_sampling_gap_seconds": 900.0,
+    "max_after_batch_end_seconds": 180.0,
+    "candidate_posterior_min": 0.9,
+    "maximum_drop_fraction": 0.5
+  },
+  "run_policy": {
+    "POLARS_MAX_THREADS": 25,
+    "slice_count": 25,
+    "workers": 25,
+    "space_policy": "Audit-only candidate scope plus one combined output; no 25 full copies."
+  },
+  "stage3_v12_policy": {
+    "drop_penalty": 3.0,
+    "matched_fraction_min": 0.5,
+    "contiguous_fraction_min": 0.4,
+    "posterior_min": 0.9,
+    "accepted": 7198,
+    "wrong_rate": 0.0,
+    "clean_retention": 1.0
+  },
+  "audit_scope": {
+    "v6_mixtures": 20,
+    "v6_partial_near_pass": 4,
+    "v6_physical_bridges": 5,
+    "unique_audit_batches": 29
+  },
+  "result": {
+    "prior_unique_batches": 205,
+    "new_unique_batches": 24,
+    "new_unique_rows": 71,
+    "final_unique_batches": 229,
+    "final_unique_rows": 345,
+    "total_incremental_from_frozen_v5_198": 31,
+    "accepted_by_source_group": [
+      {
+        "audit_source_group": "v6_mixture",
+        "len": 20
+      },
+      {
+        "audit_source_group": "v6_partial_near_pass",
+        "len": 4
+      }
+    ],
+    "association_posterior_summary": {
+      "rows": 24,
+      "finite": 24,
+      "min": 1.0,
+      "q50": 1.0,
+      "q90": 1.0,
+      "max": 1.0
+    },
+    "matched_fraction_summary": {
+      "rows": 24,
+      "finite": 24,
+      "min": 0.5,
+      "q50": 0.5,
+      "q90": 0.7,
+      "max": 0.75
+    }
+  },
+  "safety_checks": {
+    "stage3_v12_quality_gate_passed": true,
+    "prior_205_unique_batches_preserved": true,
+    "no_overlap_with_prior_unique": true,
+    "all_new_exact_identity": true,
+    "all_new_physical_gate": true,
+    "all_new_validation_gate": true,
+    "truth_invariants_preserved": true,
+    "space_saving_policy_preserved": true,
+    "passed_stage5_v7_safety_gate": true
+  },
+  "merge_target_checks": {
+    "new_unique_ge_3": true,
+    "total_incremental_from_v5_ge_10": true,
+    "final_unique_batches_ge_208": true,
+    "stage3_v12_gate_passed": true,
+    "safety_gate_passed": true,
+    "passed_stage5_v7_merge_target": true
+  },
+  "stage6_allowed_mode": "target_branch",
+  "truth_boundary": {
+    "amdar_effective_strict_truth_rows": 0,
+    "amdar_holdout_eligible_rows": 0,
+    "estimated_time_is_strict_point_truth": false,
+    "usage_role": "support_only_not_strict_truth"
+  },
+  "outputs": {
+    "candidate_scores": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716/stage5_v7/amdar_adsb_candidate_drop_dtw_scores_v7.parquet",
+    "batch_diagnostics": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716/stage5_v7/amdar_adsb_batch_diagnostics_v7.parquet",
+    "incremental_match": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716/stage5_v7/amdar_adsb_match_incremental_v7.parquet",
+    "partial_row_diagnostics": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716/stage5_v7/amdar_adsb_partial_row_diagnostics_v7.parquet",
+    "combined_match": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716/stage5_v7/amdar_adsb_match_v7.parquet"
+  }
+}

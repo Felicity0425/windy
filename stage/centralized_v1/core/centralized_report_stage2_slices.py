@@ -50,7 +50,7 @@ RECORD_STYLES = {
         "source": "context_wind_records",
         "color": "magma / #d936c9",
         "marker": "x",
-        "meaning": "Historical +/-360 min context wind excluding current window; color encodes wind speed and size follows time_conf. Stage2 space_conf is neutral.",
+        "meaning": "Stage4 fusion-support wind records: historical context plus any current support-only rows excluded from strict truth; color encodes wind speed and size follows time_conf. Stage2 space_conf is neutral.",
     },
     "traj": {
         "source": "loc_records",
@@ -77,9 +77,16 @@ INTEGRITY_FIELDS = [
     "context_total_span_minutes",
     "wind_window_raw_rows",
     "wind_current_raw_rows",
+    "wind_current_label_raw_rows",
+    "wind_current_support_raw_rows",
     "wind_current_required_fields_rows",
+    "wind_current_label_required_fields_rows",
+    "wind_current_support_required_fields_rows",
     "wind_current_in_domain_rows",
+    "wind_current_label_in_domain_rows",
+    "wind_current_support_in_domain_rows",
     "wind_current_voxelized_rows",
+    "wind_current_support_voxelized_rows",
     "wind_current_voxel_records",
     "wind_context_raw_rows",
     "wind_context_required_fields_rows",
@@ -249,7 +256,7 @@ def _write_integrity_md(path: Path, time_str: str, audit: dict[str, Any], png_si
         f"- Stage1 clean loc rows: `{audit.get('stage1_clean_loc_rows')}`",
         f"- Radar index rows / usable: `{audit.get('radar_index_rows')}` / `{audit.get('radar_index_usable_rows')}`",
         f"- Current window: target time +/- `{audit.get('current_window_side_minutes')}` min, total `{audit.get('current_total_span_minutes')}` min.",
-        f"- Context window: target time +/- `{audit.get('context_window_side_minutes')}` min, total `{audit.get('context_total_span_minutes')}` min, excluding current window.",
+        f"- Support/context window: target time +/- `{audit.get('context_window_side_minutes')}` min, total `{audit.get('context_total_span_minutes')}` min, plus any current-window support-only wind rows excluded from strict truth.",
         f"- Domain: lat `{audit.get('domain_lat_min')}`-`{audit.get('domain_lat_max')}`, lon `{audit.get('domain_lon_min')}`-`{audit.get('domain_lon_max')}`, altitude `{audit.get('domain_alt_min_m')}`-`{audit.get('domain_alt_max_m')}` m.",
         f"- Grid shape: `{audit.get('grid_shape')}`; radar/cloud shape: `{audit.get('stage2_radar_shape')}`; original radar shape: `{audit.get('radar_original_shape')}`.",
         f"- Rendered PNG size: `{png_size[0]} x {png_size[1]}` px. This comes from matplotlib `figsize=(6.2 * {len(z_levels)}, 9.2)` and `dpi=170`, not from radar resolution.",
@@ -268,6 +275,8 @@ def _write_integrity_md(path: Path, time_str: str, audit: dict[str, Any], png_si
         "| Stage | Raw | Required fields | In domain | Voxelized rows | Voxel records |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
         f"| current wind | {audit.get('wind_current_raw_rows')} | {audit.get('wind_current_required_fields_rows')} | {audit.get('wind_current_in_domain_rows')} | {audit.get('wind_current_voxelized_rows')} | {audit.get('wind_current_voxel_records')} |",
+        f"| current strict-label wind | {audit.get('wind_current_label_raw_rows')} | {audit.get('wind_current_label_required_fields_rows')} | {audit.get('wind_current_label_in_domain_rows')} | {audit.get('wind_current_voxelized_rows')} | {audit.get('wind_current_voxel_records')} |",
+        f"| current support-only wind | {audit.get('wind_current_support_raw_rows')} | {audit.get('wind_current_support_required_fields_rows')} | {audit.get('wind_current_support_in_domain_rows')} | {audit.get('wind_current_support_voxelized_rows')} | merged into context_wind_records |",
         f"| context wind | {audit.get('wind_context_raw_rows')} | {audit.get('wind_context_required_fields_rows')} | {audit.get('wind_context_in_domain_rows')} | {audit.get('wind_context_voxelized_rows')} | {audit.get('wind_context_voxel_records')} |",
         "",
         "## Trajectory And Motion Integrity",
@@ -280,8 +289,9 @@ def _write_integrity_md(path: Path, time_str: str, audit: dict[str, Any], png_si
         "## Interpretation",
         "",
         "- Large drops from raw rows to voxel records are expected because records outside the Stage2 grid/altitude range are excluded and multiple observations in the same `(z,y,x)` are grouped.",
-        "- Sparse current wind does not mean the radar or trajectory layer failed; it means few current-window wind observations survived the Stage2 grid-domain and current-window constraints.",
+        "- Sparse current wind does not mean the radar or trajectory layer failed; it means few current-window strict-truth-candidate wind observations survived the Stage2 grid-domain and current-window constraints.",
         "- QC candidates such as very high context wind speeds are reported, not deleted, in this Stage2 pass.",
+        "- Current support-only wind rows are excluded from `wind_records` and merged into `context_wind_records` as fusion-support observations, so they do not participate in strict holdout truth.",
         "- Stage2 keeps `space_conf=1.0` for all-in context records. Spatial localization should be computed later in Stage4 from each observation voxel to each target voxel.",
         "",
     ]
@@ -333,8 +343,8 @@ def _append_integrity_summary(path: Path, rows: list[dict[str, Any]]) -> None:
             "## Interpretation",
             "",
             "- Drops from raw rows to voxel records are expected because records are constrained to the target time window, Stage2 China-domain grid, `0-15000m` altitude range, required fields, and then grouped by `(z,y,x)`.",
-            "- `20260211060600` has very sparse current wind labels because only one current-window wind observation survives the grid-domain constraints.",
-            "- Context observations are not ground-truth labels. They are historical context with `time_conf`, neutral `space_conf=1.0`, and `joint_likelihood=obs_conf*time_conf` for later Stage4 fusion.",
+            "- `20260211060600` has very sparse current wind labels because only one strict-truth-candidate current wind observation survives the grid-domain constraints.",
+            "- Context/support observations are not ground-truth labels. They are historical context plus any current support-only wind rows, with `time_conf`, neutral `space_conf=1.0`, and `joint_likelihood=obs_conf*time_conf` for later Stage4 fusion.",
             "- Stage4 should compute spatial localization from each observation voxel to each target voxel; Stage2 no longer downweights observations by distance to `reference_center`.",
             "",
         ]
@@ -876,9 +886,9 @@ def render_one(frame_npz: Path, out_dir: Path, z_levels: list[int], auto_top_k: 
     ref_source = meta.get("reference_center_source", meta.get("roi_center_source", "?"))
     fig.suptitle(
         f"Centralized v1 Stage2 regenerated observations - {time_str}\n"
-        f"Current +/-{current_window} min vs context +/-{context_window} min; time_conf=0.5^(|dt|/{halflife}); "
+        f"Current +/-{current_window} min vs support/context +/-{context_window} min; time_conf=0.5^(|dt|/{halflife}); "
         f"Reference center=({ref_lat}, {ref_lon}) from {ref_source}; Stage2 space_conf=1.0, target-voxel localization deferred to Stage4\n"
-        f"All-in observations; no Stage2 spatial crop/filter; Ground Center is logical, no comm-distance filter\n"
+        f"Strict labels in wind_records, fusion support in context_wind_records; no Stage2 spatial crop/filter; Ground Center is logical, no comm-distance filter\n"
         f"Domain lat {LAT_MIN:.1f}-{LAT_MAX:.1f}, lon {LON_MIN:.1f}-{LON_MAX:.1f}, altitude step {DELTA_ALT:.0f} m",
         fontsize=12,
     )

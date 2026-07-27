@@ -1,0 +1,11 @@
+{
+  "generated_date": "2026-07-16",
+  "large_framework_stage": "Stage5 v7 complete; Stage6 gate decision",
+  "stage5_v7_safety_gate": true,
+  "stage5_v7_merge_target": true,
+  "final_unique_batches": 229,
+  "new_unique_batches_v7": 24,
+  "total_incremental_from_v5": 31,
+  "stage6_allowed_mode": "target_branch",
+  "truth_invariants_preserved": true
+}

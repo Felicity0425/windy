@@ -1,0 +1,12 @@
+{
+  "out_dir": "优化/数据处理/stage5_v7_calibrated_partial_optimized_20260716",
+  "slice_count": 25,
+  "workers": 25,
+  "candidate_topk": 10,
+  "max_cross_track_q90_km": 1.5,
+  "max_vertical_q90_m": 800.0,
+  "max_sampling_gap_seconds": 900.0,
+  "max_after_batch_end_seconds": 180.0,
+  "candidate_posterior_min": 0.9,
+  "maximum_drop_fraction": 0.5
+}

@@ -1,0 +1,55 @@
+{
+  "slice_id": 13,
+  "input_rows": 6819,
+  "local_rows": 6819,
+  "clean_rows": 6817,
+  "diagnostic_excluded_rows": 2,
+  "legacy_compatible_leg_count": 1068,
+  "clean_tracklet_count": 1061,
+  "fragmentation_delta": -7,
+  "singleton_tracklets": 92,
+  "graph_edges": 2338,
+  "physical_graph_edges": 3,
+  "graph_paths": 1064,
+  "formal_bridge_accepts": 0,
+  "point_role_counts": [
+    {
+      "clean_point_role_v8": "clean_include",
+      "len": 5051
+    },
+    {
+      "clean_point_role_v8": "diagnostic_exclude",
+      "len": 2
+    },
+    {
+      "clean_point_role_v8": "uncertain_keep_low_weight",
+      "len": 1766
+    }
+  ],
+  "anomaly_counts": [
+    {
+      "point_anomaly_type_v8": "real_sampling_gap_candidate",
+      "len": 20
+    },
+    {
+      "point_anomaly_type_v8": "insufficient_context",
+      "len": 233
+    },
+    {
+      "point_anomaly_type_v8": "locally_consistent",
+      "len": 4799
+    },
+    {
+      "point_anomaly_type_v8": "isolated_altitude_spike",
+      "len": 1
+    },
+    {
+      "point_anomaly_type_v8": "unreachable_motion_edge",
+      "len": 1765
+    },
+    {
+      "point_anomaly_type_v8": "isolated_position_spike",
+      "len": 1
+    }
+  ]
+}

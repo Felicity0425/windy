@@ -1,0 +1,9 @@
+{
+  "out_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage5_v5_matching_full_rejected_scope_optimized_20260714",
+  "slice_count": 25,
+  "workers": 25,
+  "candidate_topk": 10,
+  "micro_min_points": 5,
+  "micro_max_points": 9,
+  "micro_min_weighted_score": 0.9
+}

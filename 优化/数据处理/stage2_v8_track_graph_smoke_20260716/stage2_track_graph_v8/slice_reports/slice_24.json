@@ -1,0 +1,51 @@
+{
+  "slice_id": 24,
+  "input_rows": 7131,
+  "local_rows": 7131,
+  "clean_rows": 7128,
+  "diagnostic_excluded_rows": 3,
+  "legacy_compatible_leg_count": 1094,
+  "clean_tracklet_count": 1086,
+  "fragmentation_delta": -8,
+  "singleton_tracklets": 81,
+  "graph_edges": 2443,
+  "physical_graph_edges": 4,
+  "graph_paths": 1090,
+  "formal_bridge_accepts": 0,
+  "point_role_counts": [
+    {
+      "clean_point_role_v8": "clean_include",
+      "len": 5285
+    },
+    {
+      "clean_point_role_v8": "diagnostic_exclude",
+      "len": 3
+    },
+    {
+      "clean_point_role_v8": "uncertain_keep_low_weight",
+      "len": 1843
+    }
+  ],
+  "anomaly_counts": [
+    {
+      "point_anomaly_type_v8": "real_sampling_gap_candidate",
+      "len": 20
+    },
+    {
+      "point_anomaly_type_v8": "unreachable_motion_edge",
+      "len": 1843
+    },
+    {
+      "point_anomaly_type_v8": "insufficient_context",
+      "len": 231
+    },
+    {
+      "point_anomaly_type_v8": "locally_consistent",
+      "len": 5034
+    },
+    {
+      "point_anomaly_type_v8": "isolated_position_spike",
+      "len": 3
+    }
+  ]
+}

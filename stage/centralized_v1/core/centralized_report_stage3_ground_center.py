@@ -128,7 +128,7 @@ def _write_md(path: Path, summary_row: dict[str, Any], payload: dict[str, Any]) 
     ]
     meanings = {
         "label_candidates": "Current-window wind_records; Stage4 hold-out candidates only.",
-        "context_wind_observations": "Historical context_wind_records for Stage4 fusion.",
+        "context_wind_observations": "Stage4 fusion-support wind observations: historical context plus any current support-only rows excluded from strict holdout truth.",
         "context_motion_observations": "Historical context_motion_records for Stage4 fusion.",
         "trajectory_observations": "Current-window loc_records trajectory support.",
         "motion_observations": "Current-window motion_records motion support.",
@@ -171,7 +171,7 @@ def _write_md(path: Path, summary_row: dict[str, Any], payload: dict[str, Any]) 
             "",
             "## Stage4 Entry",
             "",
-            "Stage4 should draw strict hold-out points only from `label_candidates` / `wind_records`. Any selected hold-out point must be removed before fusion and then evaluated with concrete `gt_u/gt_v/pred_u/pred_v` errors.",
+            "Stage4 should draw strict hold-out points only from `label_candidates` / `wind_records`. `context_wind_records` are fusion-support observations and may include historical context plus current support-only rows excluded from strict truth. Any selected hold-out point must be removed before fusion and then evaluated with concrete `gt_u/gt_v/pred_u/pred_v` errors.",
             "",
         ]
     )

@@ -1,0 +1,2 @@
+[Point Eval] hold-out voxel (z=14, y=291, x=480): gt=[u -4.881, v 10.963] m/s, pred=[u 8.298, v 5.582] m/s, u_error=13.179, v_error=-5.380, vector_error=14.235 m/s, conf=1.000, nearest_train_distance_vox=1.4142135623730951, qc_review=True (nearest_current_context_role_gap_ge_30mps;role_conflict_triggered_at_holdout_voxel)
+[Point Eval] hold-out voxel (z=29, y=319, x=502): gt=[u 13.641, v -3.149] m/s, pred=[u 13.208, v -2.856] m/s, u_error=-0.433, v_error=0.293, vector_error=0.523 m/s, conf=1.000, nearest_train_distance_vox=1.4142135623730951, qc_review=False ()

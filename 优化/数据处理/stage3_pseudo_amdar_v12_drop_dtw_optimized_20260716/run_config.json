@@ -1,0 +1,9 @@
+{
+  "out_dir": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716",
+  "slice_count": 25,
+  "workers": 25,
+  "seed": 20260716,
+  "cases_per_split": 900,
+  "negative_candidates": 1,
+  "huber_delta": 1.5
+}

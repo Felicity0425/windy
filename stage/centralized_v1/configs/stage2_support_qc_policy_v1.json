@@ -1,0 +1,56 @@
+{
+  "policy_name": "stage2_support_qc_policy_v1",
+  "policy_version": "1.1",
+  "enable_speed_tail": true,
+  "enable_superob": true,
+  "enable_weight_caps": true,
+  "enable_real_space_conf": true,
+  "enable_obs_error_model": true,
+  "enable_buddy_features": true,
+  "hard_speed_max_mps": 150.0,
+  "enable_source_anomaly_hard_filter": true,
+  "amdar_anomaly_speed_hard_mps": 120.0,
+  "other_anomaly_speed_hard_mps": 120.0,
+  "enable_amdar_batch_span_hard_filter": false,
+  "amdar_anomaly_batch_hspan_deg_hard": 8.0,
+  "amdar_anomaly_batch_vspan_m_hard": 8000.0,
+  "amdar_speed_tail_start_mps": 70.0,
+  "amdar_speed_tail_full_mps": 95.0,
+  "amdar_speed_tail_min_factor": 0.1,
+  "space_conf_min": 0.02,
+  "space_conf_max": 1.0,
+  "sigma_reference_mps": 8.0,
+  "error_factor_min": 0.05,
+  "error_factor_max": 4.0,
+  "instrument_sigma_high_altitude_m": 9000.0,
+  "instrument_sigma_mps": {
+    "turb": {
+      "default": 2.0,
+      "high_altitude": 2.5
+    },
+    "amdar": {
+      "default": 4.0,
+      "high_altitude": 5.5
+    },
+    "other": {
+      "default": 6.0,
+      "high_altitude": 7.5
+    }
+  },
+  "repr_floor_mps": 1.5,
+  "repr_min_mps": 1.0,
+  "repr_max_mps": 18.0,
+  "repr_spread_coeff": 0.5,
+  "repr_hspan_coeff": 1.0,
+  "repr_vspan_coeff": 1.0,
+  "repr_hscale_km": 80.0,
+  "repr_vscale_m": 1200.0,
+  "max_weight_per_batch_per_voxel": 3.0,
+  "max_weight_per_flight_per_voxel": 3.0,
+  "max_weight_per_source_per_voxel": 20.0,
+  "max_single_group_weight_ratio": 0.3,
+  "buddy_radius_xy": 1,
+  "buddy_radius_z": 0,
+  "buddy_min_neighbors": 2,
+  "context_view_default": "with_amdar"
+}

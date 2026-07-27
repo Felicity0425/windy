@@ -102,6 +102,16 @@ def _mae_rows(rows: list[dict[str, Any]]) -> float:
     return float(np.mean(arr)) if arr.size else float("nan")
 
 
+def _rmse_values(values: list[float]) -> float:
+    arr = _finite_array(values)
+    return float(np.sqrt(np.mean(arr**2))) if arr.size else float("nan")
+
+
+def _mae_values(values: list[float]) -> float:
+    arr = _finite_array(values)
+    return float(np.mean(arr)) if arr.size else float("nan")
+
+
 def _fmt(value: Any, digits: int = 6) -> str:
     try:
         number = float(value)
@@ -304,6 +314,22 @@ def _representation_score(components: dict[str, float]) -> float:
     return float(sum(weights[key] * components[key] for key in weights))
 
 
+def _representation_equivalent_value(row: dict[str, Any], kind: str) -> float:
+    if kind == "neighbor_min_r1":
+        value = _to_float(row, "representation_equivalent_error_r1_min_mps", float("nan"))
+        if not math.isfinite(value):
+            value = _to_float(row, "point_neighbor_min_vector_error", float("nan"))
+    elif kind == "neighbor_weighted_r1":
+        value = _to_float(row, "representation_equivalent_error_r1_weighted_mps", float("nan"))
+        if not math.isfinite(value):
+            value = _to_float(row, "point_neighbor_weighted_vector_error", float("nan"))
+    else:
+        value = _to_float(row, "vector_error", float("nan"))
+    if not math.isfinite(value):
+        value = _to_float(row, "vector_error", float("nan"))
+    return value
+
+
 def _enrich_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -315,6 +341,23 @@ def _enrich_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         enriched["nearest_train_speed_mps"] = _nearest_train_speed(row)
         enriched["representation_vertical_proxy_mps"] = _vertical_proxy(row)
         enriched["context_only_nearest_support"] = _context_only_nearest_support(row)
+        enriched["representation_equivalent_error_r1_min_mps"] = _representation_equivalent_value(row, "neighbor_min_r1")
+        enriched["representation_equivalent_error_r1_weighted_mps"] = _representation_equivalent_value(
+            row, "neighbor_weighted_r1"
+        )
+        enriched["representation_equivalent_gain_r1_min_mps"] = max(
+            0.0,
+            enriched["vector_error"] - enriched["representation_equivalent_error_r1_min_mps"],
+        )
+        enriched["representation_equivalent_gain_r1_weighted_mps"] = max(
+            0.0,
+            enriched["vector_error"] - enriched["representation_equivalent_error_r1_weighted_mps"],
+        )
+        enriched["representation_equivalent_local_sigma_r1_mps"] = _to_float(
+            row,
+            "representation_equivalent_local_sigma_r1_mps",
+            _to_float(row, "point_neighbor_std_vector_error", float("nan")),
+        )
         enriched["representation_error_score"] = score
         enriched["representation_error_score_bin"] = _score_bin(score)
         enriched["altitude_bin"] = _altitude_bin(_to_float(row, "alt_m"))
@@ -538,6 +581,39 @@ def _bucket_calibration_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     return bucket_rows
 
 
+def _equivalent_metric_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    official = [_to_float(row, "vector_error", float("nan")) for row in rows]
+    neighbor_min = [_to_float(row, "representation_equivalent_error_r1_min_mps", float("nan")) for row in rows]
+    neighbor_weighted = [
+        _to_float(row, "representation_equivalent_error_r1_weighted_mps", float("nan")) for row in rows
+    ]
+    metrics = [
+        ("official_center_voxel", official, True),
+        ("representation_equivalent_neighbor_min_r1", neighbor_min, False),
+        ("representation_equivalent_neighbor_weighted_r1", neighbor_weighted, False),
+    ]
+    official_rmse = _rmse_values(official)
+    official_mae = _mae_values(official)
+    out: list[dict[str, Any]] = []
+    for name, values, official_metric in metrics:
+        rmse = _rmse_values(values)
+        mae = _mae_values(values)
+        out.append(
+            {
+                "metric_name": name,
+                "official_metric": official_metric,
+                "points": len(rows),
+                "rmse_mps": rmse,
+                "mae_mps": mae,
+                "p95_mps": _percentile(values, 95.0),
+                "p99_mps": _percentile(values, 99.0),
+                "gain_vs_official_rmse_mps": official_rmse - rmse,
+                "gain_vs_official_mae_mps": official_mae - mae,
+            }
+        )
+    return out
+
+
 def _top_points(rows: list[dict[str, Any]], top_n: int) -> list[dict[str, Any]]:
     sorted_rows = sorted(
         rows,
@@ -585,6 +661,7 @@ def _write_report_md(
     rule_rows: list[dict[str, Any]],
     feature_rows: list[dict[str, Any]],
     bucket_rows: list[dict[str, Any]],
+    equivalent_rows: list[dict[str, Any]],
     top_rows: list[dict[str, Any]],
 ) -> None:
     overall_rmse = _rmse_rows(rows)
@@ -626,11 +703,29 @@ def _write_report_md(
         "| ---: | ---: | ---: | ---: | ---: | ---: |",
         f"| {len(rows)} | {_fmt(overall_rmse)} | {_fmt(overall_mae)} | {_fmt(overall_p95)} | {_fmt(overall_p99)} | {high_count} |",
         "",
+        "## Representation-Equivalent Auxiliary Metrics",
+        "",
+        "These are auxiliary evaluation metrics only. They keep the official center-voxel strict holdout score unchanged and add a narrower neighborhood-equivalent view for representation-mismatch diagnosis.",
+        "",
+        "| metric | official | RMSE | MAE | P95 | P99 | RMSE gain vs official | MAE gain vs official |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in equivalent_rows:
+        lines.append(
+            f"| `{row['metric_name']}` | `{row['official_metric']}` | {_fmt(row['rmse_mps'])} | {_fmt(row['mae_mps'])} | "
+            f"{_fmt(row['p95_mps'])} | {_fmt(row['p99_mps'])} | {_fmt(row['gain_vs_official_rmse_mps'])} | "
+            f"{_fmt(row['gain_vs_official_mae_mps'])} |"
+        )
+
+    lines.extend(
+        [
+            "",
         "## Rule Candidates",
         "",
         "| rule | flagged | high-error recall | high-error precision | unflagged RMSE | SSE share captured | P95 recall | P99 recall |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ]
+        ]
+    )
     for row in rule_rows:
         lines.append(
             f"| `{row['rule_name']}` | {row['flagged_points']} | {_fmt(row['high_error_ge30_recall'])} | "
@@ -780,6 +875,7 @@ def main() -> None:
     ]
     feature_rows = _feature_summary_rows(enriched_rows)
     bucket_rows = _bucket_calibration_rows(enriched_rows)
+    equivalent_rows = _equivalent_metric_rows(enriched_rows)
     top_rows = _top_points(enriched_rows, args.top_n)
 
     metadata = {
@@ -803,10 +899,16 @@ def main() -> None:
             "point_neighbor_weighted_vector_error",
             "point_neighbor_std_vector_error",
             "representativeness_gap_point_minus_min_mps",
+            "representation_equivalent_error_r1_min_mps",
+            "representation_equivalent_error_r1_weighted_mps",
+            "representation_equivalent_gain_r1_min_mps",
+            "representation_equivalent_gain_r1_weighted_mps",
+            "representation_equivalent_local_sigma_r1_mps",
         ],
     }
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    _write_csv(args.out_dir / "representation_equivalent_metrics.csv", equivalent_rows)
     _write_csv(args.out_dir / "representation_error_feature_summary.csv", feature_rows)
     _write_csv(args.out_dir / "representation_error_bucket_calibration.csv", bucket_rows)
     _write_csv(args.out_dir / "representation_error_rule_candidates.csv", rule_rows)
@@ -821,6 +923,7 @@ def main() -> None:
         rule_rows,
         feature_rows,
         bucket_rows,
+        equivalent_rows,
         top_rows,
     )
 

@@ -47,6 +47,25 @@ from schema_contract import (
 )
 
 
+def _filter_valid_numeric_rows(
+    df: pl.DataFrame,
+    required_float_cols: list[str],
+    required_nonnull_cols: list[str] | None = None,
+) -> pl.DataFrame:
+    if len(df) == 0:
+        return df
+    filters: list[pl.Expr] = []
+    for col in required_float_cols:
+        if col in df.columns:
+            filters.append(pl.col(col).cast(pl.Float64, strict=False).is_finite())
+    for col in required_nonnull_cols or []:
+        if col in df.columns:
+            filters.append(pl.col(col).is_not_null())
+    if not filters:
+        return df
+    return df.filter(pl.all_horizontal(filters))
+
+
 def load_stage1_outputs():
     """读取 Stage 1 输出文件。
 
@@ -114,7 +133,24 @@ def voxelize_frame(df_wind, df_loc, radar_item):
     # 风观测：时间窗筛选 + 地理投影 + 高度离散
     # ----------------------------
     wind_frame = df_wind.filter((pl.col("time_utc") >= time_start) & (pl.col("time_utc") <= time_end))
-    wind_frame = wind_frame.with_columns([
+    if "wind_reconstruction_role" in wind_frame.columns:
+        wind_label_frame = wind_frame.filter(pl.col("wind_reconstruction_role") == "strict_truth_candidate")
+        wind_support_frame = wind_frame.filter(pl.col("wind_reconstruction_role") != "strict_truth_candidate")
+    else:
+        wind_label_frame = wind_frame
+        wind_support_frame = wind_frame.head(0)
+    wind_label_frame = _filter_valid_numeric_rows(wind_label_frame, ["lat_clean", "lon_clean", "alt_meters", "u_wind", "v_wind", "obs_conf"])
+    wind_label_frame = wind_label_frame.with_columns([
+        ((pl.col("lon_clean") - cfg.LON_MIN) / delta_lon).cast(pl.Int32).alias("x"),
+        ((cfg.LAT_MAX - pl.col("lat_clean")) / delta_lat).cast(pl.Int32).alias("y"),
+        ((pl.col("alt_meters") - cfg.ALT_MIN) / cfg.DELTA_ALT).cast(pl.Int32).alias("z"),
+    ]).filter(
+        (pl.col("x") >= 0) & (pl.col("x") < W_DIM) &
+        (pl.col("y") >= 0) & (pl.col("y") < H_DIM) &
+        (pl.col("z") >= 0) & (pl.col("z") < cfg.Z_DIM)
+    )
+    wind_support_frame = _filter_valid_numeric_rows(wind_support_frame, ["lat_clean", "lon_clean", "alt_meters", "u_wind", "v_wind", "obs_conf"])
+    wind_support_frame = wind_support_frame.with_columns([
         ((pl.col("lon_clean") - cfg.LON_MIN) / delta_lon).cast(pl.Int32).alias("x"),
         ((cfg.LAT_MAX - pl.col("lat_clean")) / delta_lat).cast(pl.Int32).alias("y"),
         ((pl.col("alt_meters") - cfg.ALT_MIN) / cfg.DELTA_ALT).cast(pl.Int32).alias("z"),
@@ -128,6 +164,11 @@ def voxelize_frame(df_wind, df_loc, radar_item):
     # 轨迹观测：同样按时间窗和空间体素筛选
     # ----------------------------
     loc_frame = df_loc.filter((pl.col("time_utc") >= time_start) & (pl.col("time_utc") <= time_end))
+    loc_frame = _filter_valid_numeric_rows(
+        loc_frame,
+        ["lat_clean", "lon_clean", "alt_meters"],
+        required_nonnull_cols=["time_utc"],
+    )
     loc_frame = loc_frame.with_columns([
         ((pl.col("lon_clean") - cfg.LON_MIN) / delta_lon).cast(pl.Int32).alias("x"),
         ((cfg.LAT_MAX - pl.col("lat_clean")) / delta_lat).cast(pl.Int32).alias("y"),
@@ -141,7 +182,7 @@ def voxelize_frame(df_wind, df_loc, radar_item):
     # ----------------------------
     # 体素聚合：风场
     # ----------------------------
-    wind_grouped = wind_frame.group_by(["z", "y", "x"]).agg([
+    wind_grouped = wind_label_frame.group_by(["z", "y", "x"]).agg([
         pl.col("u_wind").mean().alias("u"),
         pl.col("v_wind").mean().alias("v"),
         pl.len().alias("obs_count"),
@@ -152,26 +193,34 @@ def voxelize_frame(df_wind, df_loc, radar_item):
     # 体素聚合：轨迹密度 / 运动分量
     # ----------------------------
     loc_grouped = loc_frame.group_by(["z", "y", "x"]).agg(pl.len().alias("density"))
-    loc_motion_grouped = loc_frame.drop_nulls(subset=["u_motion", "v_motion"]).group_by(["z", "y", "x"]).agg([
+    loc_motion_grouped = _filter_valid_numeric_rows(loc_frame, ["u_motion", "v_motion"]).group_by(["z", "y", "x"]).agg([
         pl.col("u_motion").mean().alias("u_motion"),
         pl.col("v_motion").mean().alias("v_motion"),
         pl.len().alias("motion_count"),
     ])
-    flight_motion_grouped = loc_frame.drop_nulls(subset=["u_motion", "v_motion", "flight_id"]).group_by(["flight_id", "z", "y", "x"]).agg([
+    flight_motion_grouped = _filter_valid_numeric_rows(
+        loc_frame,
+        ["u_motion", "v_motion"],
+        required_nonnull_cols=["flight_id"],
+    ).group_by(["flight_id", "z", "y", "x"]).agg([
         pl.col("u_motion").mean().alias("u_motion"),
         pl.col("v_motion").mean().alias("v_motion"),
         pl.len().alias("motion_count"),
     ])
 
     # 原始航班记录，用于 Stage 3 构建智能体
-    flight_raw_records = loc_frame.drop_nulls(subset=["u_motion", "v_motion", "flight_id", "time_utc", "lat_clean", "lon_clean", "alt_meters"])
+    flight_raw_records = _filter_valid_numeric_rows(
+        loc_frame,
+        ["u_motion", "v_motion", "lat_clean", "lon_clean", "alt_meters"],
+        required_nonnull_cols=["flight_id", "time_utc"],
+    )
 
     # AMDAR / TURB 分开保留，便于 Stage 3/4 更清楚地区分来源
-    amdar_grouped = wind_frame.filter(pl.col("source") == "amdar").group_by(["z", "y", "x"]).agg([
+    amdar_grouped = wind_label_frame.filter(pl.col("source") == "amdar").group_by(["z", "y", "x"]).agg([
         pl.col("u_wind").mean().alias("u"),
         pl.col("v_wind").mean().alias("v"),
     ])
-    turb_grouped = wind_frame.filter(pl.col("source") == "turb").group_by(["z", "y", "x"]).agg([
+    turb_grouped = wind_label_frame.filter(pl.col("source") == "turb").group_by(["z", "y", "x"]).agg([
         pl.col("u_wind").mean().alias("u"),
         pl.col("v_wind").mean().alias("v"),
     ])

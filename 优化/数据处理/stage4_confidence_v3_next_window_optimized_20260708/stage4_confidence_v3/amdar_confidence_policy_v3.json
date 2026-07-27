@@ -1,0 +1,78 @@
+{
+  "generated_at_utc": "2026-07-08T03:20:51.742220+00:00",
+  "policy_version": "amdar_stage4_confidence_v3_next_window_stage2v7_stage3v8_20260708",
+  "purpose": "Four-component AMDAR support confidence with next-window safeguards; AMDAR remains support-only.",
+  "strict_truth_boundary": {
+    "rule": "No confidence tier or confidence value can create strict truth.",
+    "amdar_effective_strict_truth_rows": 0,
+    "amdar_holdout_eligible_rows": 0,
+    "turb_enhanced_holdout_eligible_after_qc": 175
+  },
+  "component_definitions": {
+    "source_quality_conf": "1.0 for TURB, 0.90 for AMDAR.",
+    "met_physics_conf": "0 for structural bad or unsupported high wind; 0.42-0.78 for supported high wind; 0.70 for review flags; 1.0 otherwise.",
+    "batch_representativeness_conf": "Weighted geometric mean of batch size, spatial span, phase, and within-batch wind consistency.",
+    "identity_completeness_conf": "Continuous identity completeness score; current AMDAR rows all have both tail and flight.",
+    "identity_risk_conf_diagnostic": "Diagnostic-only identity-date risk score from Stage2 v7 availability/ambiguity; not a real ADS-B match and not part of base_support_conf.",
+    "adsb_match_quality_conf": "Reserved for Stage5 accepted rows only; null in this Stage4 v3 run."
+  },
+  "weights": {
+    "source_quality_conf": 0.22,
+    "met_physics_conf": 0.28,
+    "batch_representativeness_conf": 0.4,
+    "identity_completeness_conf": 0.1
+  },
+  "dynamic_thresholds": {
+    "source": "Stage3 v8 validation split only; locked_test is report-only.",
+    "validation_time_error_q90_s": 4.793507,
+    "confidence_predictor_validation_log_r2": 0.7643715335932993,
+    "confidence_predictor_locked_log_r2_report_only": 0.7512218063079048,
+    "strong_validation": true,
+    "T1": {
+      "base_support_conf_min": 0.72,
+      "time_uncertainty_s_max": 300.0
+    },
+    "T2": {
+      "base_support_conf_min": 0.53,
+      "time_uncertainty_s_max": 900.0
+    },
+    "T3": {
+      "base_support_conf_min": 0.3,
+      "time_uncertainty_s_max": 1800.0
+    }
+  },
+  "tier_rules": {
+    "T0/S": "TURB with Stage1 v3 strict_holdout_eligible and no hard reject.",
+    "T1/A": "base_support_conf >= T1 threshold and time_uncertainty_s <= 300, support only.",
+    "T2/B": "base_support_conf >= T2 threshold and time_uncertainty_s <= 900, support only.",
+    "T3/C": "base_support_conf >= T3 threshold and time_uncertainty_s <= 1800, low-confidence support/super-ob only.",
+    "T4/D_or_R": "Below T3, unsupported high wind, structural bad, or manual review/reject."
+  },
+  "high_wind_policy": {
+    "retained_150_200": "Retained with low-to-medium met_physics_conf when structurally valid.",
+    "retained_gt200": "Only retained when altitude>=7000m and batch span is bounded (hspan<=8deg, vspan<=6500m).",
+    "unsupported_gt150": "Rejected with base_support_conf=0.",
+    "teacher_filter_conflict_note": "Stage1 teacher-filter v4 filtered all >150 m/s; Stage4 v3 implements the later optimization-plan high-wind rescue as an explicit experimental confidence override, not truth promotion."
+  },
+  "next_window_safeguards": {
+    "confidence_subtier": "T2 is split into T2a direct-support candidate and T2b broad/lower-weight support to prevent wide-batch overuse.",
+    "time_uncertainty_s_stage4_v3_continuous": "Continuous conservative diagnostic for Stage6; discrete step uncertainty is still used for Stage4 v3 tier assignment.",
+    "validation_threshold_grid": "validation split only for threshold quality checks; locked_test is report-only.",
+    "high_wind_branch_sensitivity": "A0 teacher-filter, A1 current rescue, and A2 moderate rescue are summarized for downstream ablation; no branch promotes AMDAR to truth."
+  },
+  "stage3_v8_compound_gate_policy": {
+    "name": "wide_diagnostic_cost_3",
+    "best_cost_max": 3.0,
+    "cross_track_q90_max_km": 1.5,
+    "vertical_q90_max_m": 800.0,
+    "sampling_gap_max_s": 900.0,
+    "ambiguity_margin_min": 1.2
+  },
+  "forbidden_operations_reaffirmed": [
+    "Do not promote AMDAR to strict truth.",
+    "Do not set AMDAR holdout_eligible true.",
+    "Do not treat AMDAR batch_end_time as point observation time.",
+    "Do not treat Stage2 v7 identity-date prior as a real ADS-B match.",
+    "Do not fabricate Stage5 accepted rows."
+  ]
+}

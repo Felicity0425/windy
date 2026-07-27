@@ -1,0 +1,35 @@
+{
+  "component_columns": [
+    "source_quality_conf",
+    "met_physics_conf",
+    "batch_representativeness_conf",
+    "identity_completeness_conf"
+  ],
+  "matrix": {
+    "source_quality_conf": {
+      "source_quality_conf": 1.0,
+      "met_physics_conf": -0.0011596244561637894,
+      "batch_representativeness_conf": 0.03231572151895173,
+      "identity_completeness_conf": null
+    },
+    "met_physics_conf": {
+      "source_quality_conf": -0.0011596244561638048,
+      "met_physics_conf": 1.0,
+      "batch_representativeness_conf": 0.047145263414322375,
+      "identity_completeness_conf": null
+    },
+    "batch_representativeness_conf": {
+      "source_quality_conf": 0.03231572151895168,
+      "met_physics_conf": 0.04714526341432237,
+      "batch_representativeness_conf": 1.0,
+      "identity_completeness_conf": null
+    },
+    "identity_completeness_conf": {
+      "source_quality_conf": null,
+      "met_physics_conf": null,
+      "batch_representativeness_conf": null,
+      "identity_completeness_conf": 1.0
+    }
+  },
+  "interpretation": "identity_completeness_conf may be constant because all current AMDAR rows have both tail and flight identifiers."
+}

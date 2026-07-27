@@ -1,0 +1,320 @@
+{
+  "t2_subtier_counts": {
+    "T3": 123358,
+    "T2a_direct_support_candidate": 117916,
+    "T2b_broad_or_lower_weight_support": 92621,
+    "T4": 51295,
+    "T1": 45818
+  },
+  "t2_subtier_detail": {
+    "T2_total": 210537,
+    "T2a_direct_support_candidate": 117916,
+    "T2b_broad_or_lower_weight_support": 92621,
+    "T2a_pct_of_T2": 56.00725763167519,
+    "T2b_pct_of_T2": 43.992742368324805
+  },
+  "stage4_weighting_recommendation_counts": {
+    "superob_or_context_only": 123358,
+    "direct_support_medium_weight": 117916,
+    "low_weight_or_superob_preferred": 92621,
+    "display_only_or_reject": 51295,
+    "direct_support_high_weight": 45818
+  },
+  "time_uncertainty_s_stage4_v3_continuous_summary": {
+    "present": true,
+    "rows": 431008,
+    "null_rows": 0,
+    "finite_rows": 431008,
+    "min": 180.0,
+    "p10": 300.0,
+    "q50": 900.0,
+    "p90": 1500.0,
+    "p99": 2100.0,
+    "max": 2100.0
+  },
+  "identity_risk_conf_diagnostic_summary": {
+    "present": true,
+    "rows": 431008,
+    "null_rows": 0,
+    "finite_rows": 431008,
+    "min": 0.7737694899777902,
+    "p10": 0.8682144328701104,
+    "q50": 0.9239215252580503,
+    "p90": 0.9740037464252967,
+    "p99": 0.989846400767953,
+    "max": 1.0
+  },
+  "validation_threshold_grid": {
+    "source": "validation split only for threshold quality checks; locked_test is report-only.",
+    "grid_path": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/stage4_v3_threshold_grid_validation_only.parquet",
+    "selected_policy": {
+      "t1_base_support_conf_min": 0.72,
+      "t2_base_support_conf_min": 0.53,
+      "t3_base_support_conf_min": 0.3,
+      "real_amdar_t1_rows": 45818,
+      "real_amdar_t2_rows": 210537,
+      "real_amdar_t1_coverage_pct": 10.630429133565967,
+      "real_amdar_t2_coverage_pct": 48.847585195634416,
+      "real_amdar_t1_t2_coverage_pct": 59.47801432920039,
+      "validation_policy_pool_rows": 14630,
+      "validation_t1_cases": 11425,
+      "validation_t2_cases": 3135,
+      "validation_t1_case_time_error_q90_seconds_q90": 5.894042,
+      "validation_t2_case_time_error_q90_seconds_q90": 5.087406,
+      "validation_t1_wrong_leg_rate": 0.006652078774617068,
+      "validation_t2_wrong_leg_rate": 0.0,
+      "passes_t1_q90_lt_180s": true,
+      "passes_t2_q90_lt_600s": true,
+      "passes_t1_wrong_leg_le_1pct": true,
+      "passes_t2_wrong_leg_le_2pct": true
+    },
+    "selected_policy_validation_pool_metrics": {
+      "row_count": 14630,
+      "tier_counts": {
+        "T1": 11425,
+        "T2": 3135,
+        "T4": 49,
+        "T3": 21
+      },
+      "T1": {
+        "case_count": 11425,
+        "case_time_error_q90_seconds_q90": 5.894042,
+        "wrong_leg_rate": 0.006652078774617068,
+        "accepted_by_stage3_compound_gate_fraction": 1.0
+      },
+      "T2": {
+        "case_count": 3135,
+        "case_time_error_q90_seconds_q90": 5.087406,
+        "wrong_leg_rate": 0.0,
+        "accepted_by_stage3_compound_gate_fraction": 1.0
+      },
+      "T3": {
+        "case_count": 21,
+        "case_time_error_q90_seconds_q90": 12.11988,
+        "wrong_leg_rate": 0.0,
+        "accepted_by_stage3_compound_gate_fraction": 1.0
+      },
+      "T4": {
+        "case_count": 49,
+        "case_time_error_q90_seconds_q90": 3.743111,
+        "wrong_leg_rate": 0.0,
+        "accepted_by_stage3_compound_gate_fraction": 1.0
+      }
+    },
+    "selected_policy_validation_all_cases_diagnostic": {
+      "row_count": 16165,
+      "tier_counts": {
+        "T1": 12093,
+        "T2": 3678,
+        "T3": 344,
+        "T4": 50
+      },
+      "T1": {
+        "case_count": 12093,
+        "case_time_error_q90_seconds_q90": 9.851969,
+        "wrong_leg_rate": 0.020342346812205408,
+        "accepted_by_stage3_compound_gate_fraction": 0.9447614322335235
+      },
+      "T2": {
+        "case_count": 3678,
+        "case_time_error_q90_seconds_q90": 962.0,
+        "wrong_leg_rate": 0.04187058183795541,
+        "accepted_by_stage3_compound_gate_fraction": 0.8523654159869495
+      },
+      "T3": {
+        "case_count": 344,
+        "case_time_error_q90_seconds_q90": 5296.0,
+        "wrong_leg_rate": 0.27325581395348836,
+        "accepted_by_stage3_compound_gate_fraction": 0.061046511627906974
+      },
+      "T4": {
+        "case_count": 50,
+        "case_time_error_q90_seconds_q90": 3.772492,
+        "wrong_leg_rate": 0.0,
+        "accepted_by_stage3_compound_gate_fraction": 0.98
+      }
+    },
+    "quality_checks": {
+      "validation_only_threshold_grid_written": true,
+      "selected_t1_validation_q90_lt_3min": true,
+      "selected_t2_validation_q90_lt_10min": true,
+      "selected_t1_validation_wrong_leg_le_1pct": true,
+      "selected_t2_validation_wrong_leg_le_2pct": true,
+      "locked_test_not_used_for_threshold_selection": true
+    }
+  },
+  "locked_test_report_only": {
+    "source": "locked_test report only; not used for threshold selection.",
+    "selected_policy_locked_test_all_cases_metrics": {
+      "row_count": 16145,
+      "tier_counts": {
+        "T1": 11962,
+        "T2": 3785,
+        "T3": 361,
+        "T4": 37
+      },
+      "T1": {
+        "case_count": 11962,
+        "case_time_error_q90_seconds_q90": 9.418195,
+        "wrong_leg_rate": 0.021066711252298947,
+        "accepted_by_stage3_compound_gate_fraction": 0.9476676141113526
+      },
+      "T2": {
+        "case_count": 3785,
+        "case_time_error_q90_seconds_q90": 871.212748,
+        "wrong_leg_rate": 0.04570673712021136,
+        "accepted_by_stage3_compound_gate_fraction": 0.8483487450462351
+      },
+      "T3": {
+        "case_count": 361,
+        "case_time_error_q90_seconds_q90": 5286.0,
+        "wrong_leg_rate": 0.2770083102493075,
+        "accepted_by_stage3_compound_gate_fraction": 0.0664819944598338
+      },
+      "T4": {
+        "case_count": 37,
+        "case_time_error_q90_seconds_q90": 3.445525,
+        "wrong_leg_rate": 0.02702702702702703,
+        "accepted_by_stage3_compound_gate_fraction": 0.972972972972973
+      }
+    }
+  },
+  "high_wind_branch_sensitivity": {
+    "source": "confidence-only high-wind branch sensitivity; no real truth promotion and no full reconstruction in this audit.",
+    "branches": [
+      {
+        "branch_name": "A0_teacher_filter_all_gt150_rejected",
+        "tier_counts": {
+          "T2": 209377,
+          "T3": 121500,
+          "T4": 54319,
+          "T1": 45818,
+          "T0": 175
+        },
+        "amdar_tier_counts": {
+          "T2": 209377,
+          "T3": 121500,
+          "T4": 54313,
+          "T1": 45818
+        },
+        "amdar_t1_t2_coverage_pct": 59.208877793451634,
+        "high_wind_action_counts": {
+          "reject_gt150_teacher_filter": 4505
+        },
+        "high_wind_retained_rows_T1_T3": 0,
+        "high_wind_retained_pct_of_gt150": 0.0,
+        "gt200_retained_rows_T1_T3": 0,
+        "strict_truth_invariant_check": {
+          "amdar_t0_rows": 0,
+          "amdar_strict_holdout_rows": 0,
+          "turb_t0_rows": 175
+        },
+        "stage4_reconstruction_smoke": {
+          "status": "not_run_in_confidence_only_next_window_audit",
+          "reason": "This audit does not run full large-framework Stage4 windfield reconstruction; branch must still be validated on strict TURB holdout before claiming reconstruction benefit."
+        }
+      },
+      {
+        "branch_name": "A1_current_v3_rescue",
+        "tier_counts": {
+          "T2": 210537,
+          "T3": 123358,
+          "T4": 51301,
+          "T1": 45818,
+          "T0": 175
+        },
+        "amdar_tier_counts": {
+          "T2": 210537,
+          "T3": 123358,
+          "T4": 51295,
+          "T1": 45818
+        },
+        "amdar_t1_t2_coverage_pct": 59.47801432920039,
+        "high_wind_action_counts": {
+          "retain_150_200_review_low_confidence": 1712,
+          "retain_gt200_high_altitude_batch_supported": 1626,
+          "reject_gt150_unsupported": 1167
+        },
+        "high_wind_retained_rows_T1_T3": 3018,
+        "high_wind_retained_pct_of_gt150": 66.99223085460599,
+        "gt200_retained_rows_T1_T3": 1511,
+        "strict_truth_invariant_check": {
+          "amdar_t0_rows": 0,
+          "amdar_strict_holdout_rows": 0,
+          "turb_t0_rows": 175
+        },
+        "stage4_reconstruction_smoke": {
+          "status": "not_run_in_confidence_only_next_window_audit",
+          "reason": "This audit does not run full large-framework Stage4 windfield reconstruction; branch must still be validated on strict TURB holdout before claiming reconstruction benefit."
+        }
+      },
+      {
+        "branch_name": "A2_moderate_rescue_gt200_stricter",
+        "tier_counts": {
+          "T2": 210537,
+          "T3": 122089,
+          "T4": 52570,
+          "T1": 45818,
+          "T0": 175
+        },
+        "amdar_tier_counts": {
+          "T2": 210537,
+          "T3": 122089,
+          "T4": 52564,
+          "T1": 45818
+        },
+        "amdar_t1_t2_coverage_pct": 59.47801432920039,
+        "high_wind_action_counts": {
+          "reject_gt150_moderate_policy": 2551,
+          "retain_150_200_review_low_confidence": 1712,
+          "retain_gt200_strict_high_altitude_small_batch": 242
+        },
+        "high_wind_retained_rows_T1_T3": 1749,
+        "high_wind_retained_pct_of_gt150": 38.82352941176471,
+        "gt200_retained_rows_T1_T3": 242,
+        "strict_truth_invariant_check": {
+          "amdar_t0_rows": 0,
+          "amdar_strict_holdout_rows": 0,
+          "turb_t0_rows": 175
+        },
+        "stage4_reconstruction_smoke": {
+          "status": "not_run_in_confidence_only_next_window_audit",
+          "reason": "This audit does not run full large-framework Stage4 windfield reconstruction; branch must still be validated on strict TURB holdout before claiming reconstruction benefit."
+        }
+      }
+    ],
+    "quality_checks": {
+      "branch_a1_current_high_wind_retained_ge_2800": true,
+      "branch_a2_moderate_available_for_downstream_ablation": true,
+      "all_branches_keep_amdar_t0_zero": true,
+      "all_branches_keep_amdar_holdout_zero": true
+    }
+  },
+  "quality_checks": {
+    "confidence_subtier_present": true,
+    "t2_subtier_covers_all_t2_rows": true,
+    "time_uncertainty_continuous_present": true,
+    "continuous_time_uncertainty_not_above_step_uncertainty": true,
+    "identity_risk_diagnostic_present": true,
+    "identity_risk_diagnostic_not_used_as_adsb_match": true,
+    "stage2_v7_identity_prior_not_used_in_base_support_conf": true,
+    "validation_only_threshold_grid_written": true,
+    "selected_t1_validation_q90_lt_3min": true,
+    "selected_t2_validation_q90_lt_10min": true,
+    "selected_t1_validation_wrong_leg_le_1pct": true,
+    "selected_t2_validation_wrong_leg_le_2pct": true,
+    "locked_test_not_used_for_threshold_selection": true,
+    "branch_a1_current_high_wind_retained_ge_2800": true,
+    "branch_a2_moderate_available_for_downstream_ablation": true,
+    "all_branches_keep_amdar_t0_zero": true,
+    "all_branches_keep_amdar_holdout_zero": true,
+    "passed_stage4_next_window_quality_gate": true
+  },
+  "outputs": {
+    "stage4_v3_threshold_grid_validation_only": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/stage4_v3_threshold_grid_validation_only.parquet",
+    "stage4_v3_threshold_grid_summary": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/stage4_v3_threshold_grid_summary.json",
+    "stage4_v3_selected_policy": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/stage4_v3_selected_policy.json",
+    "locked_test_report_only": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/locked_test_report_only.json",
+    "high_wind_branch_sensitivity_summary": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/high_wind_branch_sensitivity_summary.json"
+  }
+}

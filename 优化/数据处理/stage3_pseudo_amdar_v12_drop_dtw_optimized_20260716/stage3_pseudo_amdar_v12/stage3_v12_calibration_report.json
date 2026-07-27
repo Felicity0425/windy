@@ -1,0 +1,216 @@
+{
+  "generated_at_utc": "2026-07-16T08:16:18.322364+00:00",
+  "scope": "Large-framework Stage3 v12 raw-sequence Drop-DTW validation for Stage5 partial matching.",
+  "run_config": {
+    "out_dir": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716",
+    "slice_count": 25,
+    "workers": 25,
+    "seed": 20260716,
+    "cases_per_split": 900,
+    "negative_candidates": 1,
+    "huber_delta": 1.5
+  },
+  "run_policy": {
+    "POLARS_MAX_THREADS": 25,
+    "slice_count": 25,
+    "workers": 25,
+    "space_policy": "One shared case bank and compact compressed outputs; no 25 full-data copies."
+  },
+  "counts": {
+    "base_pseudo_cases": 2700,
+    "sequence_cases": 25004,
+    "sequence_rows": 163461,
+    "candidate_evaluations": 150024,
+    "locked_selected": 7347
+  },
+  "selected_policy": {
+    "drop_penalty": 3.0,
+    "matched_fraction_min": 0.5,
+    "contiguous_fraction_min": 0.4,
+    "posterior_min": 0.9,
+    "accepted": 7198,
+    "wrong_rate": 0.0,
+    "clean_retention": 1.0
+  },
+  "locked_test": {
+    "wrong_leg_or_hard_negative_rate": 0.00013610997686130393,
+    "catastrophic_rate": 0.0006022645145748012,
+    "posterior_ece": 0.0003613587087449125,
+    "max_corruption_false_acceptance_rate": 0.0016863406408094434,
+    "max_hard_negative_type_false_acceptance_rate": 0.00042265426880811494,
+    "corruption_report": [
+      {
+        "corruption_type": "block_outlier",
+        "cases": 593,
+        "accepted": 264,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 0.9991568296795953,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "clean",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "continuous_gap",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "drop_10",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "drop_20",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "drop_30",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "drop_40",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "drop_50",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "local_swap",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "point_missing",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "point_outlier",
+        "cases": 593,
+        "accepted": 485,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "random_order",
+        "cases": 593,
+        "accepted": 388,
+        "false_acceptance": 0,
+        "drop_precision": 0.327150084317032,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "receiver_time_bias",
+        "cases": 593,
+        "accepted": 593,
+        "false_acceptance": 0,
+        "drop_precision": 1.0,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "corruption_type": "reverse",
+        "cases": 593,
+        "accepted": 280,
+        "false_acceptance": 1,
+        "drop_precision": 0.16526138279932545,
+        "drop_recall": 1.0,
+        "false_acceptance_rate": 0.0016863406408094434
+      }
+    ],
+    "hard_negative_report": [
+      {
+        "hard_negative_type": "domain_matched_wrong_leg",
+        "cases": 4760,
+        "accepted": 4155,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      },
+      {
+        "hard_negative_type": "same_identity_wrong_tracklet",
+        "cases": 2366,
+        "accepted": 2163,
+        "false_acceptance": 1,
+        "false_acceptance_rate": 0.00042265426880811494
+      },
+      {
+        "hard_negative_type": "same_tail_date_wrong_flight",
+        "cases": 1176,
+        "accepted": 1029,
+        "false_acceptance": 0,
+        "false_acceptance_rate": 0.0
+      }
+    ]
+  },
+  "quality_gate": {
+    "locked_test_nonempty": true,
+    "wrong_leg_or_hard_negative_rate_le_1pct": true,
+    "catastrophic_rate_lt_3pct": true,
+    "posterior_ece_le_0_05": true,
+    "each_corruption_false_acceptance_le_2pct": true,
+    "each_hard_negative_type_false_acceptance_le_2pct": true,
+    "truth_holdout_invariants_preserved": true,
+    "space_saving_policy_preserved": true,
+    "passed_stage3_v12_quality_gate": true
+  },
+  "truth_boundary": {
+    "pseudo_sequences_are_validation_only": true,
+    "real_amdar_strict_truth_rows_created": 0,
+    "real_amdar_holdout_eligible_rows_created": 0
+  },
+  "outputs": {
+    "case_bank": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716/stage3_pseudo_amdar_v12/raw_sequence_case_bank_v12.parquet",
+    "row_truth": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716/stage3_pseudo_amdar_v12/raw_sequence_rows_with_truth_v12.parquet",
+    "candidate_evaluation": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716/stage3_pseudo_amdar_v12/drop_dtw_candidate_evaluation_v12.parquet",
+    "locked_test": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716/stage3_pseudo_amdar_v12/drop_dtw_locked_test_v12.parquet",
+    "posterior_model": "优化/数据处理/stage3_pseudo_amdar_v12_drop_dtw_optimized_20260716/stage3_pseudo_amdar_v12/association_posterior_model_v12.json"
+  }
+}

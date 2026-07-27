@@ -1,0 +1,2 @@
+[Point Eval] hold-out voxel (z=22, y=287, x=517): gt=[u 14.572, v -8.756] m/s, pred=[u 17.354, v -8.690] m/s, u_error=2.782, v_error=0.065, vector_error=2.783 m/s, conf=1.000, nearest_train_distance_vox=1.4142135623730951, qc_review=False ()
+[Point Eval] hold-out voxel (z=29, y=400, x=444): gt=[u 35.930, v -12.372] m/s, pred=[u 32.715, v -12.939] m/s, u_error=-3.214, v_error=-0.567, vector_error=3.264 m/s, conf=0.732, nearest_train_distance_vox=1.0, qc_review=True (context_only_nearest_support)

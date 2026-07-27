@@ -1,0 +1,15 @@
+{
+  "out_dir": "优化/数据处理/stage5_v6_hmm_viterbi_optimized_20260715",
+  "slice_count": 25,
+  "workers": 25,
+  "candidate_topk": 10,
+  "posterior_threshold": 0.805,
+  "unique_margin_min": 1.5,
+  "unique_candidate_posterior_min": 0.9,
+  "mixture_candidate_posterior_min": 0.55,
+  "max_best_cost": 3.0,
+  "max_cross_track_q90_km": 1.5,
+  "max_vertical_q90_m": 800.0,
+  "max_sampling_gap_seconds": 900.0,
+  "max_after_batch_end_seconds": 180.0
+}

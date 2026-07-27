@@ -1,0 +1,271 @@
+{
+  "generated_at_utc": "2026-07-14T03:25:20.153888+00:00",
+  "scope": "Large-framework Stage5 real AMDAR-ADS-B matching v5; optimization-plan phase 4.",
+  "run_policy": {
+    "POLARS_MAX_THREADS": 25,
+    "slice_count": 25,
+    "workers": 25,
+    "space_policy": "Single compact candidate/output tables; one reused ADS-B point table; no 25 full copies."
+  },
+  "inputs": {
+    "stage5_v4_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage5_v4_matching_optimized_20260708/stage5_v4",
+    "stage3_v9_micro_report": "/data/LFT-W02_data/pengxu/优化/数据处理/stage3_pseudo_amdar_v9_micro_leg_optimized_20260713/stage3_pseudo_amdar_v9_micro/pseudo_amdar_v9_micro_validation_report.json",
+    "stage3_v10_tiny_report": "/data/LFT-W02_data/pengxu/优化/数据处理/stage3_pseudo_amdar_v10_tiny_leg_optimized_20260714_validated/stage3_pseudo_amdar_v9_micro/pseudo_amdar_v9_micro_validation_report.json",
+    "stage4_v3_summary": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/confidence_tier_summary_v3.json"
+  },
+  "candidate_counts": {
+    "v4_candidate_rows": 45391,
+    "v4_rejected_batches_expanded": 56435,
+    "eligible_micro_leg_count": 1610396,
+    "micro_candidate_rows": 173307,
+    "micro_candidate_batches": 52704,
+    "eligible_tiny_leg_count": 134762,
+    "tiny_candidate_rows": 12474,
+    "tiny_candidate_batches": 11113,
+    "total_candidate_rows_v5": 231172
+  },
+  "result": {
+    "amdar_batches": 56521,
+    "accepted_batches": 198,
+    "accepted_rows": 251,
+    "accepted_fraction_of_all_batches": 0.0035031227331434336,
+    "incremental_micro_accepted_batches": 100,
+    "incremental_tiny_accepted_batches": 12,
+    "accepted_by_grade_v5": {
+      "C": 150,
+      "B": 41,
+      "A": 7
+    },
+    "accepted_by_identity_level_v5": {
+      "I0_exact_tail_flight_date_micro_leg_v9_validated": 100,
+      "strong_tail_flight_date": 86,
+      "I0_exact_tail_flight_date_tiny_leg_v10_validated": 12
+    },
+    "reject_reason_counts": {
+      "best_cost_gt_3": 48615,
+      "stage4_t4_not_accepted_for_reconstruction": 3026,
+      "monotonic_violation": 1961,
+      "no_candidate_leg": 1368,
+      "projected_time_after_batch_end_gt_180s": 1048,
+      "cross_track_q90_gt_1_5km": 158,
+      "validated_expansion_compound_gate_fail": 63,
+      "stage1_qc_blocked_rows_present": 60,
+      "vertical_q90_gt_800m": 24
+    }
+  },
+  "raw_v4_scorer_summary": {
+    "evaluated_candidate_batches": 55153,
+    "candidate_leg_ids_loaded": 122558,
+    "candidate_point_rows_loaded": 957302,
+    "accepted_batches": 261,
+    "accepted_rows": 364,
+    "rejected_batches": 56260,
+    "all_batch_status_counts": {
+      "rejected_by_compound_gate": 54892,
+      "no_candidate": 1368,
+      "accepted": 261
+    },
+    "reject_reason_counts": {
+      "best_cost_gt_3": 48615,
+      "stage4_t4_not_accepted_for_reconstruction": 3026,
+      "monotonic_violation": 1961,
+      "no_candidate_leg": 1368,
+      "projected_time_after_batch_end_gt_180s": 1048,
+      "cross_track_q90_gt_1_5km": 158,
+      "stage1_qc_blocked_rows_present": 60,
+      "vertical_q90_gt_800m": 24
+    },
+    "accepted_fraction_of_all_batches": 0.004617752693689072,
+    "accepted_fraction_of_candidate_batches": 0.004732290174605189,
+    "accepted_by_stage4_tier": {
+      "T1": 254,
+      "T3": 6,
+      "T2": 1
+    },
+    "accepted_by_stage4_subtier": {
+      "T1": 254,
+      "T3": 6,
+      "T2a_direct_support_candidate": 1
+    },
+    "accepted_by_stage5_grade_v4": {
+      "C": 99,
+      "B": 98,
+      "A": 64
+    },
+    "accepted_identity_match_level_counts": {
+      "strong_tail_flight_date": 261
+    },
+    "accepted_by_batch_size_bucket": {
+      "1": 207,
+      "2-4": 50,
+      "5-10": 4
+    },
+    "accepted_by_phase": {
+      "LVR": 185,
+      "ASC": 54,
+      "DES": 22
+    },
+    "accepted_leg_quality_counts": {
+      "C": 175,
+      "B": 86
+    },
+    "accepted_source_tier_counts": {
+      "SX_exact_identity_unvalidated_diagnostic": 156,
+      "S2_short_batch_threshold_source": 47,
+      "S1_balanced_medium_source": 34,
+      "SX_tiny_exact_identity_v10_validated": 19,
+      "S0_core_clean_medium_long_source": 5
+    },
+    "accepted_cost_summary": {
+      "present": true,
+      "rows": 261,
+      "null_rows": 0,
+      "finite_rows": 261,
+      "min": 0.006369726980298406,
+      "p10": 0.240678828082424,
+      "q50": 0.8476528400824872,
+      "p90": 1.2675047235047012,
+      "p99": 1.591151151960952,
+      "max": 1.8317801578413915
+    },
+    "accepted_cross_track_q90_summary": {
+      "present": true,
+      "rows": 261,
+      "null_rows": 0,
+      "finite_rows": 261,
+      "min": 0.006369726980298406,
+      "p10": 0.20927410480674974,
+      "q50": 0.8420253603953932,
+      "p90": 1.2590164693577734,
+      "p99": 1.4643770819254764,
+      "max": 1.4761534807292276
+    },
+    "accepted_vertical_q90_summary": {
+      "present": true,
+      "rows": 261,
+      "null_rows": 0,
+      "finite_rows": 261,
+      "min": 0.0,
+      "p10": 0.0,
+      "q50": 3.047999999998865,
+      "p90": 221.3564819340245,
+      "p99": 662.4419229801015,
+      "max": 762.0
+    },
+    "accepted_sampling_gap_max_summary": {
+      "present": true,
+      "rows": 261,
+      "null_rows": 0,
+      "finite_rows": 261,
+      "min": 42.0,
+      "p10": 54.0,
+      "q50": 61.0,
+      "p90": 71.0,
+      "p99": 95.0,
+      "max": 660.0
+    },
+    "all_scored_cost_summary": {
+      "present": true,
+      "rows": 55153,
+      "null_rows": 0,
+      "finite_rows": 55153,
+      "min": 0.006369726980298406,
+      "p10": 18.002781710634057,
+      "q50": 44.58893970666675,
+      "p90": 131.55461394207117,
+      "p99": 263.23689907467525,
+      "max": 468.6580386442783
+    },
+    "multi_candidate_summary": {
+      "candidate_topk": 10,
+      "evaluated_candidate_batches": 55153,
+      "batches_with_multiple_evaluated_candidates": 51754,
+      "accepted_batches_with_multiple_evaluated_candidates": 214,
+      "all_scored_ambiguity_margin_summary": {
+        "present": true,
+        "rows": 51754,
+        "null_rows": 0,
+        "finite_rows": 51754,
+        "min": 1.0000118553801642,
+        "p10": 1.0555210501187475,
+        "q50": 1.6781659573823282,
+        "p90": 4.675938570677366,
+        "p99": 19.67109803672532,
+        "max": 8546.260809625459
+      },
+      "accepted_ambiguity_margin_summary": {
+        "present": true,
+        "rows": 261,
+        "null_rows": 47,
+        "finite_rows": 214,
+        "min": 28.184474197809507,
+        "p10": 68.12644087966304,
+        "q50": 121.33732004914162,
+        "p90": 326.42451964349885,
+        "p99": 3764.402596392675,
+        "max": 8546.260809625459
+      },
+      "accepted_second_best_cost_summary": {
+        "present": true,
+        "rows": 261,
+        "null_rows": 47,
+        "finite_rows": 214,
+        "min": 42.72703420028441,
+        "p10": 54.437348059738184,
+        "q50": 84.38430642833629,
+        "p90": 119.4596120721477,
+        "p99": 207.5625463422695,
+        "max": 235.24174894588774
+      },
+      "ambiguity_policy": "A requires margin>=2.5, B>=1.5, C>=1.2 when more than one candidate is evaluated; a single exact identity/date candidate is allowed without a ratio.",
+      "top_candidates_table_policy": "Detailed best/second diagnostics are in amdar_adsb_batch_diagnostics_v4.parquet; full top-k row expansion is intentionally not duplicated to keep compact 25-slice outputs."
+    },
+    "traceability_checks": {
+      "accepted_rows_have_matched_leg": true,
+      "accepted_rows_have_segment_start_end": true,
+      "accepted_rows_support_only": true,
+      "accepted_rows_mark_batch_end_as_upper_bound": true,
+      "accepted_rows_not_point_observation_truth": true,
+      "accepted_rows_have_stage6_input_role": true,
+      "accepted_rows_have_v4_grade": true,
+      "accepted_rows_have_v7_source_tier": true
+    }
+  },
+  "safety_checks": {
+    "stage3_v9_micro_gate_passed": true,
+    "stage3_v10_tiny_gate_passed": true,
+    "stage4_v3_gate_passed": true,
+    "batch_diagnostics_cover_all_56521": true,
+    "accepted_rows_have_matched_leg": true,
+    "accepted_rows_support_only": true,
+    "accepted_rows_holdout_false": true,
+    "estimated_time_not_strict_point_truth": true,
+    "usage_role_support_only": true,
+    "micro_rows_exact_identity_only": true,
+    "micro_rows_grade_c_only": true,
+    "micro_rows_confidence_capped_0_40": true,
+    "micro_rows_satisfy_v9_cost": true,
+    "micro_rows_satisfy_v9_cross_track": true,
+    "micro_rows_satisfy_v9_vertical": true,
+    "micro_rows_satisfy_v9_sampling_gap": true,
+    "micro_rows_satisfy_v9_ambiguity": true,
+    "tiny_rows_exact_identity_only": true,
+    "tiny_rows_grade_c_only": true,
+    "tiny_rows_confidence_capped_0_30": true,
+    "tiny_rows_satisfy_v10_gate": true,
+    "passed_stage5_v5_safety_gate": true
+  },
+  "target_checks": {
+    "accepted_batches_ge_566": false,
+    "accepted_fraction_ge_1pct": false,
+    "grades_a_b_c_present": true,
+    "passed_stage5_v5_target_gate": false
+  },
+  "stage6_allowed_mode": "conservative_diagnostic_only",
+  "truth_boundary": {
+    "amdar_effective_strict_truth_rows": 0,
+    "amdar_holdout_eligible_rows": 0,
+    "estimated_time_is_strict_point_truth": false,
+    "usage_role": "support_only_not_strict_truth"
+  }
+}

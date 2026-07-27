@@ -126,13 +126,63 @@ def _count_in_domain(df: pl.DataFrame) -> int:
     )
 
 
+def _count_source(df: pl.DataFrame, source: str) -> int:
+    if len(df) == 0 or "source" not in df.columns:
+        return 0
+    return int(len(df.filter(pl.col("source") == source)))
+
+
 def _global_audit(df_wind: pl.DataFrame, df_loc: pl.DataFrame, radar_index: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
+    audit = {
         "stage1_clean_wind_rows": int(len(df_wind)),
         "stage1_clean_loc_rows": int(len(df_loc)),
         "radar_index_rows": int(len(radar_index)),
         "radar_index_usable_rows": int(sum(1 for row in radar_index if row.get("usable"))),
     }
+    if "wind_reconstruction_role" in df_wind.columns:
+        vc = (
+            df_wind.select(pl.col("wind_reconstruction_role").cast(pl.Utf8, strict=False).fill_null("null").alias("wind_reconstruction_role"))
+            .to_series()
+            .value_counts()
+            .sort("count", descending=True)
+        )
+        audit["stage1_wind_reconstruction_role_counts"] = {str(k): int(v) for k, v in vc.iter_rows()}
+        if "source" in df_wind.columns:
+            role_source = (
+                df_wind.group_by(["source", "wind_reconstruction_role"])
+                .agg(pl.len().alias("rows"))
+                .sort(["source", "wind_reconstruction_role"])
+            )
+            audit["stage1_wind_reconstruction_role_by_source"] = role_source.to_dicts()
+    confidence_fields = [
+        "obs_conf_v2",
+        "confidence_tier",
+        "confidence_grade",
+        "time_uncertainty_s",
+        "time_interval_start",
+        "time_interval_end",
+        "holdout_eligible",
+        "stage8_effective_strict_truth",
+        "stage8_usage_recommendation",
+        "stage11_compat_role_policy",
+    ]
+    audit["stage1_confidence_fields_present"] = {col: col in df_wind.columns for col in confidence_fields}
+    if {"source", "holdout_eligible", "stage8_effective_strict_truth"}.issubset(set(df_wind.columns)):
+        strict_audit = (
+            df_wind.group_by(["source", "holdout_eligible", "stage8_effective_strict_truth"])
+            .agg(pl.len().alias("rows"))
+            .sort(["source", "holdout_eligible", "stage8_effective_strict_truth"])
+        )
+        audit["stage1_truth_flags_by_source"] = strict_audit.to_dicts()
+    if "time_group_alignment_flag" in df_wind.columns:
+        vc = (
+            df_wind.select(pl.col("time_group_alignment_flag").cast(pl.Utf8, strict=False).fill_null("null").alias("time_group_alignment_flag"))
+            .to_series()
+            .value_counts()
+            .sort("count", descending=True)
+        )
+        audit["stage1_time_group_alignment_flag_counts"] = {str(k): int(v) for k, v in vc.iter_rows()}
+    return audit
 
 
 def _frame_audit(
@@ -154,8 +204,11 @@ def _frame_audit(
     roi_alt_m: float,
     wind_window: pl.DataFrame,
     wind_current: pl.DataFrame,
+    wind_current_label: pl.DataFrame,
+    wind_current_support: pl.DataFrame,
     wind_context: pl.DataFrame,
     wind_frame: pl.DataFrame,
+    support_wind_frame: pl.DataFrame,
     context_wind_frame: pl.DataFrame,
     wind_grouped: pl.DataFrame,
     context_wind_grouped: pl.DataFrame,
@@ -188,7 +241,8 @@ def _frame_audit(
         "context_window_side_minutes": int(context_window_minutes),
         "context_total_span_minutes": int(context_window_minutes) * 2,
         "context_excludes_current_window": True,
-        "context_window_definition": "target_time +/- context_window_side_minutes, excluding abs(delta_time_minutes) <= current_window_side_minutes",
+        "fusion_support_includes_current_support_only_rows": True,
+        "context_window_definition": "historical context uses target_time +/- context_window_side_minutes excluding abs(delta_time_minutes) <= current_window_side_minutes; context_wind_records additionally include any current support-only wind rows excluded from strict truth candidates",
         "domain_lat_min": float(LAT_MIN),
         "domain_lat_max": float(LAT_MAX),
         "domain_lon_min": float(LON_MIN),
@@ -212,15 +266,29 @@ def _frame_audit(
         "target_voxel_localization_deferred_to_stage4": True,
         "wind_window_raw_rows": int(len(wind_window)),
         "wind_current_raw_rows": int(len(wind_current)),
+        "wind_current_label_raw_rows": int(len(wind_current_label)),
+        "wind_current_support_raw_rows": int(len(wind_current_support)),
         "wind_context_raw_rows": int(len(wind_context)),
+        "wind_current_label_amdar_rows": _count_source(wind_current_label, "amdar"),
+        "wind_current_label_turb_rows": _count_source(wind_current_label, "turb"),
+        "wind_current_support_amdar_rows": _count_source(wind_current_support, "amdar"),
+        "wind_current_support_turb_rows": _count_source(wind_current_support, "turb"),
+        "wind_context_amdar_rows": _count_source(wind_context, "amdar"),
+        "wind_context_turb_rows": _count_source(wind_context, "turb"),
         "wind_current_required_fields_rows": _count_drop_nulls(wind_current, wind_required),
+        "wind_current_label_required_fields_rows": _count_drop_nulls(wind_current_label, wind_required),
+        "wind_current_support_required_fields_rows": _count_drop_nulls(wind_current_support, wind_required),
         "wind_context_required_fields_rows": _count_drop_nulls(wind_context, wind_required),
         "wind_current_in_domain_rows": _count_in_domain(wind_current),
+        "wind_current_label_in_domain_rows": _count_in_domain(wind_current_label),
+        "wind_current_support_in_domain_rows": _count_in_domain(wind_current_support),
         "wind_context_in_domain_rows": _count_in_domain(wind_context),
         "wind_current_voxelized_rows": int(len(wind_frame)),
+        "wind_current_support_voxelized_rows": int(len(support_wind_frame)),
         "wind_context_voxelized_rows": int(len(context_wind_frame)),
         "wind_current_voxel_records": int(len(wind_grouped)),
         "wind_context_voxel_records": int(len(context_wind_grouped)),
+        "wind_support_only_policy": "current rows with wind_reconstruction_role != strict_truth_candidate are excluded from wind_records and merged into context_wind_records as support-only fusion inputs",
         "loc_window_raw_rows": int(len(loc_window)),
         "loc_current_raw_rows": int(len(loc_current)),
         "loc_context_raw_rows": int(len(loc_context)),
@@ -332,6 +400,9 @@ def _build_cloud_feature_records(radar_img: np.ndarray, coarse_h: int, coarse_w:
 def _with_voxel_columns(df: pl.DataFrame, h_dim: int, w_dim: int, xy_factor: int, z_dim: int, alt_step_m: float) -> pl.DataFrame:
     if len(df) == 0:
         return df
+    df = _filter_valid_numeric_rows(df, ["lat_clean", "lon_clean", "alt_meters"])
+    if len(df) == 0:
+        return df
     delta_lat = (LAT_MAX - LAT_MIN) / float(h_dim)
     delta_lon = (LON_MAX - LON_MIN) / float(w_dim)
     return (
@@ -370,6 +441,17 @@ def _split_current_context(df: pl.DataFrame, target_time: datetime, current_wind
     current = with_dt.filter(pl.col("delta_time_minutes").abs() <= current_window_minutes)
     context = with_dt.filter(pl.col("delta_time_minutes").abs() > current_window_minutes)
     return current, context
+
+
+def _split_current_label_support(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+    if len(df) == 0:
+        return df, df
+    if "wind_reconstruction_role" not in df.columns:
+        empty = df.head(0)
+        return df, empty
+    label = df.filter(pl.col("wind_reconstruction_role") == "strict_truth_candidate")
+    support = df.filter(pl.col("wind_reconstruction_role") != "strict_truth_candidate")
+    return label, support
 
 
 def _with_context_confidence(
@@ -416,33 +498,60 @@ def _aggregate_context_wind(
 ) -> pl.DataFrame:
     if len(df) == 0:
         return pl.DataFrame()
+    df = _filter_valid_numeric_rows(df, ["u_wind", "v_wind", "lat_clean", "lon_clean", "alt_meters", "delta_time_minutes"])
+    if len(df) == 0:
+        return pl.DataFrame()
+    if "obs_conf_raw_for_reconstruction" not in df.columns:
+        df = df.with_columns(pl.col("obs_conf").cast(pl.Float64, strict=False).alias("obs_conf_raw_for_reconstruction"))
+    if "wind_reconstruction_role" not in df.columns:
+        df = df.with_columns(pl.lit("strict_truth_candidate").alias("wind_reconstruction_role"))
+    if "wind_reconstruction_exclusion_reason" not in df.columns:
+        df = df.with_columns(pl.lit("none").alias("wind_reconstruction_exclusion_reason"))
     weighted = _with_context_confidence(df, halflife_minutes, roi_lat, roi_lon, roi_alt_m, space_sigma_km, vertical_sigma_m)
-    grouped = weighted.group_by(["z", "y", "x"]).agg(
-        [
-            ((pl.col("u_wind") * pl.col("joint_likelihood")).sum() / pl.col("joint_likelihood").sum()).alias("u"),
-            ((pl.col("v_wind") * pl.col("joint_likelihood")).sum() / pl.col("joint_likelihood").sum()).alias("v"),
-            pl.len().alias("obs_count"),
-            pl.col("delta_time_minutes").abs().min().alias("nearest_delta_time_minutes"),
-            pl.col("delta_time_minutes").abs().mean().alias("mean_abs_delta_time_minutes"),
-            pl.col("time_conf").mean().alias("time_conf"),
-            pl.col("time_likelihood").mean().alias("time_likelihood"),
-            pl.col("distance_to_roi_km").mean().alias("distance_to_roi_km"),
-            pl.col("vertical_delta_to_roi_m").mean().alias("vertical_delta_to_roi_m"),
-            pl.col("space_conf").mean().alias("space_conf"),
-            pl.col("space_likelihood").mean().alias("space_likelihood"),
-            pl.col("joint_likelihood").mean().alias("joint_likelihood"),
-            pl.col("obs_conf").mean().alias("obs_conf"),
-            pl.col("roi_center_lat").first().alias("roi_center_lat"),
-            pl.col("roi_center_lon").first().alias("roi_center_lon"),
-            pl.col("roi_center_alt_m").first().alias("roi_center_alt_m"),
-        ]
-    )
+    agg_exprs = [
+        ((pl.col("u_wind") * pl.col("joint_likelihood")).sum() / pl.col("joint_likelihood").sum()).alias("u"),
+        ((pl.col("v_wind") * pl.col("joint_likelihood")).sum() / pl.col("joint_likelihood").sum()).alias("v"),
+        pl.len().alias("obs_count"),
+        pl.col("delta_time_minutes").abs().min().alias("nearest_delta_time_minutes"),
+        pl.col("delta_time_minutes").abs().mean().alias("mean_abs_delta_time_minutes"),
+        pl.col("time_conf").mean().alias("time_conf"),
+        pl.col("time_likelihood").mean().alias("time_likelihood"),
+        pl.col("distance_to_roi_km").mean().alias("distance_to_roi_km"),
+        pl.col("vertical_delta_to_roi_m").mean().alias("vertical_delta_to_roi_m"),
+        pl.col("space_conf").mean().alias("space_conf"),
+        pl.col("space_likelihood").mean().alias("space_likelihood"),
+        pl.col("joint_likelihood").mean().alias("joint_likelihood"),
+        pl.col("obs_conf").mean().alias("obs_conf"),
+        pl.col("obs_conf_raw_for_reconstruction").mean().alias("obs_conf_raw_for_reconstruction"),
+        pl.col("roi_center_lat").first().alias("roi_center_lat"),
+        pl.col("roi_center_lon").first().alias("roi_center_lon"),
+        pl.col("roi_center_alt_m").first().alias("roi_center_alt_m"),
+        pl.when(pl.col("wind_reconstruction_role") == "support_only_not_strict_truth").then(1).otherwise(0).sum().alias("current_support_only_rows"),
+        pl.when(pl.col("wind_reconstruction_role") == "support_only_not_strict_truth")
+        .then(pl.col("wind_reconstruction_exclusion_reason"))
+        .otherwise(None)
+        .drop_nulls()
+        .first()
+        .alias("support_exclusion_reason"),
+    ]
+    grouped = weighted.group_by(["z", "y", "x"]).agg(_append_confidence_agg_exprs(weighted, agg_exprs))
     grouped = grouped.with_columns(
         [
             (pl.col("u") ** 2 + pl.col("v") ** 2).sqrt().alias("wind_speed_diagnostic"),
             pl.lit(1.0).alias("quality_conf_diagnostic"),
             _density_conf_expr("obs_count"),
         ]
+    )
+    grouped = grouped.with_columns((pl.col("obs_count") - pl.col("current_support_only_rows")).clip(lower_bound=0).alias("historical_context_rows"))
+    grouped = grouped.with_columns(
+        pl.when(pl.col("current_support_only_rows") > 0)
+        .then(
+            pl.when(pl.col("historical_context_rows") > 0)
+            .then(pl.lit("mixed_support_and_historical_context"))
+            .otherwise(pl.lit("current_support_only_not_strict_truth"))
+        )
+        .otherwise(pl.lit("historical_context"))
+        .alias("support_record_role")
     )
     return grouped.with_columns(
         [
@@ -463,7 +572,7 @@ def _aggregate_context_motion(
 ) -> pl.DataFrame:
     if len(df) == 0:
         return pl.DataFrame()
-    motion = df.drop_nulls(subset=["u_motion", "v_motion"])
+    motion = _filter_valid_numeric_rows(df, ["u_motion", "v_motion", "lat_clean", "lon_clean", "alt_meters", "delta_time_minutes"])
     if len(motion) == 0:
         return pl.DataFrame()
     motion = _with_context_confidence(
@@ -517,18 +626,80 @@ def _has_cols(df: pl.DataFrame, cols: list[str]) -> bool:
     return len(df) > 0 and all(col in df.columns for col in cols)
 
 
+def _filter_valid_numeric_rows(
+    df: pl.DataFrame,
+    required_float_cols: list[str],
+    required_nonnull_cols: list[str] | None = None,
+) -> pl.DataFrame:
+    if len(df) == 0:
+        return df
+    filters: list[pl.Expr] = []
+    for col in required_float_cols:
+        if col in df.columns:
+            filters.append(pl.col(col).cast(pl.Float64, strict=False).is_finite())
+    for col in required_nonnull_cols or []:
+        if col in df.columns:
+            filters.append(pl.col(col).is_not_null())
+    if not filters:
+        return df
+    return df.filter(pl.all_horizontal(filters))
+
+
+def _mode_first_expr(col: str, alias: str | None = None) -> pl.Expr:
+    return pl.col(col).cast(pl.Utf8, strict=False).drop_nulls().mode().first().alias(alias or f"{col}_mode")
+
+
+def _sum_bool_expr(col: str, alias: str | None = None) -> pl.Expr:
+    return pl.col(col).fill_null(False).cast(pl.Int64).sum().alias(alias or f"{col}_rows")
+
+
+def _append_confidence_agg_exprs(df: pl.DataFrame, agg_exprs: list[pl.Expr]) -> list[pl.Expr]:
+    cols = set(df.columns)
+    if "obs_conf_v2" in cols:
+        agg_exprs.append(pl.col("obs_conf_v2").cast(pl.Float64, strict=False).mean().alias("obs_conf_v2"))
+    if "time_uncertainty_s" in cols:
+        agg_exprs.append(pl.col("time_uncertainty_s").cast(pl.Float64, strict=False).mean().alias("mean_time_uncertainty_s"))
+    if "confidence_grade" in cols:
+        agg_exprs.append(_mode_first_expr("confidence_grade", "confidence_grade_mode"))
+    if "confidence_tier" in cols:
+        agg_exprs.append(_mode_first_expr("confidence_tier", "confidence_tier_mode"))
+    if "stage8_usage_recommendation" in cols:
+        agg_exprs.append(_mode_first_expr("stage8_usage_recommendation", "stage8_usage_recommendation_mode"))
+    if "stage11_compat_role_policy" in cols:
+        agg_exprs.append(_mode_first_expr("stage11_compat_role_policy", "stage11_compat_role_policy"))
+    if "holdout_eligible" in cols:
+        agg_exprs.append(_sum_bool_expr("holdout_eligible", "holdout_eligible_rows"))
+    if "stage8_effective_strict_truth" in cols:
+        agg_exprs.append(_sum_bool_expr("stage8_effective_strict_truth", "effective_strict_truth_rows"))
+    if "stage8_point_time_strict_truth_available" in cols:
+        agg_exprs.append(_sum_bool_expr("stage8_point_time_strict_truth_available", "point_time_strict_truth_rows"))
+    if "source" in cols:
+        agg_exprs.extend(
+            [
+                pl.when(pl.col("source") == "amdar").then(1).otherwise(0).sum().alias("amdar_rows"),
+                pl.when(pl.col("source") == "turb").then(1).otherwise(0).sum().alias("turb_rows"),
+            ]
+        )
+    return agg_exprs
+
+
 def _aggregate_current_wind(df: pl.DataFrame) -> pl.DataFrame:
     schema = {"z": pl.Int64, "y": pl.Int64, "x": pl.Int64, "u": pl.Float64, "v": pl.Float64, "obs_count": pl.UInt32, "obs_conf": pl.Float64}
     if not _has_cols(df, ["z", "y", "x", "u_wind", "v_wind", "obs_conf"]):
         return _empty_df(schema)
-    return df.group_by(["z", "y", "x"]).agg(
-        [
-            pl.col("u_wind").mean().alias("u"),
-            pl.col("v_wind").mean().alias("v"),
-            pl.len().alias("obs_count"),
-            pl.col("obs_conf").mean().alias("obs_conf"),
-        ]
-    )
+    df = _filter_valid_numeric_rows(df, ["u_wind", "v_wind", "obs_conf"])
+    if len(df) == 0:
+        return _empty_df(schema)
+    if "obs_conf_raw_for_reconstruction" not in df.columns:
+        df = df.with_columns(pl.col("obs_conf").cast(pl.Float64, strict=False).alias("obs_conf_raw_for_reconstruction"))
+    agg_exprs = [
+        pl.col("u_wind").mean().alias("u"),
+        pl.col("v_wind").mean().alias("v"),
+        pl.len().alias("obs_count"),
+        pl.col("obs_conf").mean().alias("obs_conf"),
+        pl.col("obs_conf_raw_for_reconstruction").mean().alias("obs_conf_raw_for_reconstruction"),
+    ]
+    return df.group_by(["z", "y", "x"]).agg(_append_confidence_agg_exprs(df, agg_exprs))
 
 
 def _aggregate_current_loc(df: pl.DataFrame) -> pl.DataFrame:
@@ -542,7 +713,7 @@ def _aggregate_current_motion(df: pl.DataFrame) -> pl.DataFrame:
     schema = {"z": pl.Int64, "y": pl.Int64, "x": pl.Int64, "u_motion": pl.Float64, "v_motion": pl.Float64, "motion_count": pl.UInt32}
     if not _has_cols(df, ["z", "y", "x", "u_motion", "v_motion"]):
         return _empty_df(schema)
-    motion = df.drop_nulls(subset=["u_motion", "v_motion"])
+    motion = _filter_valid_numeric_rows(df, ["u_motion", "v_motion"])
     if len(motion) == 0:
         return _empty_df(schema)
     return motion.group_by(["z", "y", "x"]).agg(
@@ -558,7 +729,7 @@ def _aggregate_source_wind(df: pl.DataFrame, source: str) -> pl.DataFrame:
     schema = {"z": pl.Int64, "y": pl.Int64, "x": pl.Int64, "u": pl.Float64, "v": pl.Float64, "obs_count": pl.UInt32}
     if not _has_cols(df, ["z", "y", "x", "u_wind", "v_wind", "source"]):
         return _empty_df(schema)
-    filtered = df.filter(pl.col("source") == source)
+    filtered = _filter_valid_numeric_rows(df.filter(pl.col("source") == source), ["u_wind", "v_wind"])
     if len(filtered) == 0:
         return _empty_df(schema)
     return filtered.group_by(["z", "y", "x"]).agg(
@@ -599,19 +770,26 @@ def process_frame(
 
     df_wind, df_loc = _load_stage1_windows(df_wind_all, df_loc_all, target_time, context_window_minutes)
     wind_current, wind_context = _split_current_context(df_wind, target_time, current_window_minutes)
+    wind_current_label, wind_current_support = _split_current_label_support(wind_current)
     loc_current, loc_context = _split_current_context(df_loc, target_time, current_window_minutes)
-    wind_frame = _with_voxel_columns(wind_current, h_dim, w_dim, xy_factor, z_dim, alt_step_m)
+    wind_frame = _with_voxel_columns(wind_current_label, h_dim, w_dim, xy_factor, z_dim, alt_step_m)
     loc_frame = _with_voxel_columns(loc_current, h_dim, w_dim, xy_factor, z_dim, alt_step_m)
+    support_wind_frame = _with_voxel_columns(wind_current_support, h_dim, w_dim, xy_factor, z_dim, alt_step_m)
     context_wind_frame = _with_voxel_columns(wind_context, h_dim, w_dim, xy_factor, z_dim, alt_step_m)
+    fusion_support_wind_frame = pl.concat([support_wind_frame, context_wind_frame], how="diagonal_relaxed") if len(support_wind_frame) or len(context_wind_frame) else pl.DataFrame()
     context_loc_frame = _with_voxel_columns(loc_context, h_dim, w_dim, xy_factor, z_dim, alt_step_m)
     roi_lat, roi_lon, roi_alt_m, roi_source = _eval_roi_center(loc_frame)
 
     wind_grouped = _aggregate_current_wind(wind_frame)
     loc_grouped = _aggregate_current_loc(loc_frame)
     motion_grouped = _aggregate_current_motion(loc_frame)
-    context_wind_grouped = _aggregate_context_wind(context_wind_frame, time_conf_halflife_minutes, roi_lat, roi_lon, roi_alt_m, space_sigma_km, vertical_sigma_m)
+    context_wind_grouped = _aggregate_context_wind(fusion_support_wind_frame, time_conf_halflife_minutes, roi_lat, roi_lon, roi_alt_m, space_sigma_km, vertical_sigma_m)
     context_motion_grouped = _aggregate_context_motion(context_loc_frame, time_conf_halflife_minutes, roi_lat, roi_lon, roi_alt_m, space_sigma_km, vertical_sigma_m)
-    flight_raw = loc_frame.drop_nulls(subset=["u_motion", "v_motion", "flight_id", "time_utc", "lat_clean", "lon_clean", "alt_meters"])
+    flight_raw = _filter_valid_numeric_rows(
+        loc_frame,
+        ["u_motion", "v_motion", "lat_clean", "lon_clean", "alt_meters"],
+        required_nonnull_cols=["flight_id", "time_utc"],
+    )
     amdar_grouped = _aggregate_source_wind(wind_frame, "amdar")
     turb_grouped = _aggregate_source_wind(wind_frame, "turb")
     cloud_records = _build_cloud_feature_records(radar_img, coarse_h, coarse_w, z_dim, xy_factor)
@@ -633,8 +811,11 @@ def process_frame(
         roi_alt_m=roi_alt_m,
         wind_window=df_wind,
         wind_current=wind_current,
+        wind_current_label=wind_current_label,
+        wind_current_support=wind_current_support,
         wind_context=wind_context,
         wind_frame=wind_frame,
+        support_wind_frame=support_wind_frame,
         context_wind_frame=context_wind_frame,
         wind_grouped=wind_grouped,
         context_wind_grouped=context_wind_grouped,
@@ -670,7 +851,7 @@ def process_frame(
                     "source": "stage1_regenerated",
                     "current_window_minutes": int(current_window_minutes),
                     "context_window_minutes": int(context_window_minutes),
-                    "context_excludes_current_window": True,
+                    "context_excludes_current_window": False,
                     "xy_downsample": int(xy_factor),
                     "z_altitude_step_m": float(alt_step_m),
                     "z_dim": int(z_dim),
@@ -685,7 +866,10 @@ def process_frame(
                     "current_total_span_minutes": int(current_window_minutes) * 2,
                     "context_window_side_minutes": int(context_window_minutes),
                     "context_total_span_minutes": int(context_window_minutes) * 2,
-                    "context_window_definition": "target_time +/- context_window_side_minutes, excluding abs(delta_time_minutes) <= current_window_side_minutes",
+                    "context_window_definition": "target_time +/- context_window_side_minutes historical context plus any current-window support-only wind rows excluded from strict truth candidates",
+                    "wind_record_role_policy": "wind_records contain only strict_truth_candidate current wind rows; support-only current rows are merged into context_wind_records",
+                    "current_support_rows_excluded_from_wind_records": int(len(wind_current_support)),
+                    "current_label_rows_kept_in_wind_records": int(len(wind_current_label)),
                     "reference_center_policy": "current_window_flight_median_after_voxel_domain_filter",
                     "reference_center_fallback": "domain_bbox_center_lat_33.2_lon_104.0_alt_0_when_current_window_flight_records_empty_or_missing",
                     "reference_center_source": roi_source,
@@ -764,6 +948,7 @@ def process_frame(
         "reference_center_used_for_weighting": 0,
         "stage2_space_conf_mode": "neutral_all_in",
         "target_voxel_localization_deferred_to_stage4": 1,
+        "wind_record_role_policy": "wind_records=strict current truth candidates only; context_wind_records=historical context plus current support-only wind rows",
         "diagnostic_confidence_policy": "diagnostic_only_not_used_in_active_joint_likelihood",
         "qc_high_wind_speed_threshold_mps": 120.0,
         "qc_high_motion_speed_threshold_mps": 320.0,
@@ -776,6 +961,8 @@ def process_frame(
         "grid_shape": [int(z_dim), int(coarse_h), int(coarse_w)],
         "wind_voxels": int(len(wind_grouped)),
         "context_wind_voxels": int(len(context_wind_grouped)),
+        "current_support_only_rows": int(len(wind_current_support)),
+        "current_label_rows": int(len(wind_current_label)),
         "traj_voxels": int(len(loc_grouped)),
         "motion_voxels": int(len(motion_grouped)),
         "context_motion_voxels": int(len(context_motion_grouped)),

@@ -1,0 +1,259 @@
+{
+  "generated_at_utc": "2026-07-14T03:15:24.849626+00:00",
+  "scope": "Large-framework Stage5 real AMDAR-ADS-B matching v5; optimization-plan phase 4.",
+  "run_policy": {
+    "POLARS_MAX_THREADS": 25,
+    "slice_count": 25,
+    "workers": 25,
+    "space_policy": "Single compact candidate/output tables; one reused ADS-B point table; no 25 full copies."
+  },
+  "inputs": {
+    "stage5_v4_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage5_v4_matching_optimized_20260708/stage5_v4",
+    "stage3_v9_micro_report": "/data/LFT-W02_data/pengxu/优化/数据处理/stage3_pseudo_amdar_v9_micro_leg_optimized_20260713/stage3_pseudo_amdar_v9_micro/pseudo_amdar_v9_micro_validation_report.json",
+    "stage4_v3_summary": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708/stage4_confidence_v3/confidence_tier_summary_v3.json"
+  },
+  "candidate_counts": {
+    "v4_candidate_rows": 45391,
+    "v4_rejected_batches_expanded": 56435,
+    "eligible_micro_leg_count": 1610396,
+    "micro_candidate_rows": 173307,
+    "micro_candidate_batches": 52704,
+    "total_candidate_rows_v5": 218698
+  },
+  "result": {
+    "amdar_batches": 56521,
+    "accepted_batches": 186,
+    "accepted_rows": 239,
+    "accepted_fraction_of_all_batches": 0.003290812264468074,
+    "incremental_micro_accepted_batches": 100,
+    "accepted_by_grade_v5": {
+      "C": 138,
+      "B": 41,
+      "A": 7
+    },
+    "accepted_by_identity_level_v5": {
+      "I0_exact_tail_flight_date_micro_leg_v9_validated": 100,
+      "strong_tail_flight_date": 86
+    },
+    "reject_reason_counts": {
+      "best_cost_gt_3": 48124,
+      "stage4_t4_not_accepted_for_reconstruction": 3023,
+      "monotonic_violation": 1978,
+      "no_candidate_leg": 1808,
+      "projected_time_after_batch_end_gt_180s": 1119,
+      "cross_track_q90_gt_1_5km": 145,
+      "stage1_qc_blocked_rows_present": 59,
+      "micro_v9_compound_gate_fail": 56,
+      "vertical_q90_gt_800m": 23
+    }
+  },
+  "raw_v4_scorer_summary": {
+    "evaluated_candidate_batches": 54713,
+    "candidate_leg_ids_loaded": 115300,
+    "candidate_point_rows_loaded": 929043,
+    "accepted_batches": 242,
+    "accepted_rows": 345,
+    "rejected_batches": 56279,
+    "all_batch_status_counts": {
+      "rejected_by_compound_gate": 54471,
+      "no_candidate": 1808,
+      "accepted": 242
+    },
+    "reject_reason_counts": {
+      "best_cost_gt_3": 48124,
+      "stage4_t4_not_accepted_for_reconstruction": 3023,
+      "monotonic_violation": 1978,
+      "no_candidate_leg": 1808,
+      "projected_time_after_batch_end_gt_180s": 1119,
+      "cross_track_q90_gt_1_5km": 145,
+      "stage1_qc_blocked_rows_present": 59,
+      "vertical_q90_gt_800m": 23
+    },
+    "accepted_fraction_of_all_batches": 0.004281594451619752,
+    "accepted_fraction_of_candidate_batches": 0.004423080437921518,
+    "accepted_by_stage4_tier": {
+      "T1": 235,
+      "T3": 6,
+      "T2": 1
+    },
+    "accepted_by_stage4_subtier": {
+      "T1": 235,
+      "T3": 6,
+      "T2a_direct_support_candidate": 1
+    },
+    "accepted_by_stage5_grade_v4": {
+      "C": 93,
+      "B": 90,
+      "A": 59
+    },
+    "accepted_identity_match_level_counts": {
+      "strong_tail_flight_date": 242
+    },
+    "accepted_by_batch_size_bucket": {
+      "1": 188,
+      "2-4": 50,
+      "5-10": 4
+    },
+    "accepted_by_phase": {
+      "LVR": 166,
+      "ASC": 54,
+      "DES": 22
+    },
+    "accepted_leg_quality_counts": {
+      "C": 156,
+      "B": 86
+    },
+    "accepted_source_tier_counts": {
+      "SX_exact_identity_unvalidated_diagnostic": 156,
+      "S2_short_batch_threshold_source": 47,
+      "S1_balanced_medium_source": 34,
+      "S0_core_clean_medium_long_source": 5
+    },
+    "accepted_cost_summary": {
+      "present": true,
+      "rows": 242,
+      "null_rows": 0,
+      "finite_rows": 242,
+      "min": 0.006369726980298406,
+      "p10": 0.25482327524194104,
+      "q50": 0.8615336311395058,
+      "p90": 1.258135308077257,
+      "p99": 1.591151151960952,
+      "max": 1.8317801578413915
+    },
+    "accepted_cross_track_q90_summary": {
+      "present": true,
+      "rows": 242,
+      "null_rows": 0,
+      "finite_rows": 242,
+      "min": 0.006369726980298406,
+      "p10": 0.240678828082424,
+      "q50": 0.8643625313936765,
+      "p90": 1.2590164693577734,
+      "p99": 1.4660005616800065,
+      "max": 1.4761534807292276
+    },
+    "accepted_vertical_q90_summary": {
+      "present": true,
+      "rows": 242,
+      "null_rows": 0,
+      "finite_rows": 242,
+      "min": 0.0,
+      "p10": 0.0,
+      "q50": 3.047999999998865,
+      "p90": 93.46754132279602,
+      "p99": 662.4419229801015,
+      "max": 762.0
+    },
+    "accepted_sampling_gap_max_summary": {
+      "present": true,
+      "rows": 242,
+      "null_rows": 0,
+      "finite_rows": 242,
+      "min": 42.0,
+      "p10": 54.0,
+      "q50": 61.0,
+      "p90": 69.0,
+      "p99": 95.0,
+      "max": 660.0
+    },
+    "all_scored_cost_summary": {
+      "present": true,
+      "rows": 54713,
+      "null_rows": 0,
+      "finite_rows": 54713,
+      "min": 0.006369726980298406,
+      "p10": 18.56091808507513,
+      "q50": 45.65677747412728,
+      "p90": 134.55454211831008,
+      "p99": 265.7681263901532,
+      "max": 640.281934787047
+    },
+    "multi_candidate_summary": {
+      "candidate_topk": 10,
+      "evaluated_candidate_batches": 54713,
+      "batches_with_multiple_evaluated_candidates": 50942,
+      "accepted_batches_with_multiple_evaluated_candidates": 201,
+      "all_scored_ambiguity_margin_summary": {
+        "present": true,
+        "rows": 50942,
+        "null_rows": 0,
+        "finite_rows": 50942,
+        "min": 1.0000118553801642,
+        "p10": 1.0562305908949787,
+        "q50": 1.7054440804917386,
+        "p90": 4.695802247971466,
+        "p99": 19.29058365536087,
+        "max": 8546.260809625459
+      },
+      "accepted_ambiguity_margin_summary": {
+        "present": true,
+        "rows": 242,
+        "null_rows": 41,
+        "finite_rows": 201,
+        "min": 36.16412105268708,
+        "p10": 69.66160612318845,
+        "q50": 121.43830486896405,
+        "p90": 323.8822440509055,
+        "p99": 3764.402596392675,
+        "max": 8546.260809625459
+      },
+      "accepted_second_best_cost_summary": {
+        "present": true,
+        "rows": 242,
+        "null_rows": 41,
+        "finite_rows": 201,
+        "min": 43.05311358226155,
+        "p10": 55.97075284353161,
+        "q50": 84.69015617915622,
+        "p90": 120.71517139760854,
+        "p99": 207.5625463422695,
+        "max": 235.24174894588774
+      },
+      "ambiguity_policy": "A requires margin>=2.5, B>=1.5, C>=1.2 when more than one candidate is evaluated; a single exact identity/date candidate is allowed without a ratio.",
+      "top_candidates_table_policy": "Detailed best/second diagnostics are in amdar_adsb_batch_diagnostics_v4.parquet; full top-k row expansion is intentionally not duplicated to keep compact 25-slice outputs."
+    },
+    "traceability_checks": {
+      "accepted_rows_have_matched_leg": true,
+      "accepted_rows_have_segment_start_end": true,
+      "accepted_rows_support_only": true,
+      "accepted_rows_mark_batch_end_as_upper_bound": true,
+      "accepted_rows_not_point_observation_truth": true,
+      "accepted_rows_have_stage6_input_role": true,
+      "accepted_rows_have_v4_grade": true,
+      "accepted_rows_have_v7_source_tier": true
+    }
+  },
+  "safety_checks": {
+    "stage3_v9_micro_gate_passed": true,
+    "stage4_v3_gate_passed": true,
+    "batch_diagnostics_cover_all_56521": true,
+    "accepted_rows_have_matched_leg": true,
+    "accepted_rows_support_only": true,
+    "accepted_rows_holdout_false": true,
+    "estimated_time_not_strict_point_truth": true,
+    "usage_role_support_only": true,
+    "micro_rows_exact_identity_only": true,
+    "micro_rows_grade_c_only": true,
+    "micro_rows_confidence_capped_0_40": true,
+    "micro_rows_satisfy_v9_cost": true,
+    "micro_rows_satisfy_v9_cross_track": true,
+    "micro_rows_satisfy_v9_vertical": true,
+    "micro_rows_satisfy_v9_sampling_gap": true,
+    "micro_rows_satisfy_v9_ambiguity": true,
+    "passed_stage5_v5_safety_gate": true
+  },
+  "target_checks": {
+    "accepted_batches_ge_566": false,
+    "accepted_fraction_ge_1pct": false,
+    "grades_a_b_c_present": true,
+    "passed_stage5_v5_target_gate": false
+  },
+  "stage6_allowed_mode": "conservative_diagnostic_only",
+  "truth_boundary": {
+    "amdar_effective_strict_truth_rows": 0,
+    "amdar_holdout_eligible_rows": 0,
+    "estimated_time_is_strict_point_truth": false,
+    "usage_role": "support_only_not_strict_truth"
+  }
+}

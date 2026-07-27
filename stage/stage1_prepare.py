@@ -434,7 +434,9 @@ def _normalize_wind(df: pl.DataFrame, source_hint: str) -> pl.DataFrame:
                 batch_time_beijing.alias("amdar_batch_time_beijing"),
                 pl.col("time_utc").cast(pl.Datetime, strict=False).alias("amdar_batch_time_utc"),
                 pl.col("time_utc").cast(pl.Datetime, strict=False).alias("time_utc"),
-                pl.lit("batch_time_unknown_exact_type").alias("amdar_time_semantics"),
+                pl.lit("ground_receive_approx_downlink_batch_end_time").alias("amdar_time_semantics"),
+                pl.lit(True).alias("batch_end_is_time_upper_bound"),
+                pl.lit(False).alias("point_observation_time_available"),
                 pl.lit(False).alias("strict_time_truth"),
                 pl.lit(False).alias("time_is_point_observation"),
                 pl.lit(None, dtype=pl.Datetime).alias("observation_time_utc"),
@@ -449,6 +451,8 @@ def _normalize_wind(df: pl.DataFrame, source_hint: str) -> pl.DataFrame:
                 pl.lit(None, dtype=pl.Datetime).alias("amdar_batch_time_beijing"),
                 pl.lit(None, dtype=pl.Datetime).alias("amdar_batch_time_utc"),
                 pl.lit(None, dtype=pl.Utf8).alias("amdar_time_semantics"),
+                pl.lit(False).alias("batch_end_is_time_upper_bound"),
+                pl.lit(True).alias("point_observation_time_available"),
                 pl.lit(source_hint != "amdar").alias("strict_time_truth"),
                 pl.lit(True).alias("time_is_point_observation"),
                 pl.col("time_utc").cast(pl.Datetime, strict=False).alias("observation_time_utc"),
@@ -739,6 +743,7 @@ def _finalize_amdar_batch_fields(df: pl.DataFrame) -> pl.DataFrame:
     out = df.join(amdar_batch_rows, on=["source", "source_row_index"], how="left")
     out = out.with_columns(
         [
+            pl.col("wind_reconstruction_role").alias("legacy_wind_reconstruction_role"),
             pl.when(pl.col("source") == "amdar")
             .then(pl.col("usage_role").fill_null("support_only_not_strict_truth"))
             .otherwise(pl.col("wind_reconstruction_role"))
@@ -763,6 +768,11 @@ def _finalize_amdar_batch_fields(df: pl.DataFrame) -> pl.DataFrame:
             .then(pl.lit(False))
             .otherwise(pl.col("time_is_point_observation"))
             .alias("time_is_point_observation"),
+            (
+                pl.col("strict_time_truth").fill_null(False)
+                & pl.col("time_is_point_observation").fill_null(False)
+                & (pl.col("met_value_quality").fill_null("failed") == "passed")
+            ).alias("effective_strict_truth"),
         ]
     )
 
@@ -864,6 +874,9 @@ def main():
     loc_path = os.path.join(out_dir, "clean_loc.parquet")
     amdar_conservative_path = os.path.join(out_dir, "amdar_stage1_conservative.parquet")
     amdar_batch_statistics_path = os.path.join(out_dir, "amdar_batch_statistics.parquet")
+    stage1_schema_v2_path = os.path.join(out_dir, "stage1_schema_v2.json")
+    stage1_policy_v2_path = os.path.join(out_dir, "stage1_policy_v2.json")
+    legacy_vs_conservative_counts_path = os.path.join(out_dir, "legacy_vs_conservative_counts.json")
     df_wind.write_parquet(wind_path)
     df_loc.write_parquet(loc_path)
     df_wind.filter(pl.col("source") == "amdar").write_parquet(amdar_conservative_path)
@@ -885,13 +898,66 @@ def main():
                 "amdar_batch_vertical_span_m",
                 "time_quality",
                 "usage_role",
+                "legacy_wind_reconstruction_role",
                 "strict_time_truth",
                 "time_is_point_observation",
+                "point_observation_time_available",
+                "batch_end_is_time_upper_bound",
+                "effective_strict_truth",
             ]
         )
         .unique(subset=["amdar_batch_id"], maintain_order=True)
         .write_parquet(amdar_batch_statistics_path)
     )
+
+    stage1_schema_v2 = {
+        "wind_schema": {name: str(dtype) for name, dtype in df_wind.schema.items()},
+        "loc_schema": {name: str(dtype) for name, dtype in df_loc.schema.items()},
+        "key_semantics_fields": {
+            "official_compatibility_role": "wind_reconstruction_role",
+            "legacy_alias_role": "legacy_wind_reconstruction_role",
+            "conservative_usage_role": "usage_role",
+            "strict_time_truth": "strict point-time truth eligibility",
+            "effective_strict_truth": "strict_time_truth AND time_is_point_observation AND met_value_quality == passed",
+            "amdar_time_semantics": "provider-informed interpretation of raw AMDAR batch time",
+            "batch_end_is_time_upper_bound": "whether the batch time should be treated as an upper bound on per-point observation time",
+            "point_observation_time_available": "whether per-point observation time is actually available from source or reconstruction",
+        },
+    }
+    with open(stage1_schema_v2_path, "w", encoding="utf-8") as f:
+        json.dump(stage1_schema_v2, f, ensure_ascii=False, indent=2)
+
+    legacy_vs_conservative_counts = {
+        "official_wind_reconstruction_role_counts": _value_count_map(df_wind, "wind_reconstruction_role"),
+        "legacy_wind_reconstruction_role_counts": _value_count_map(df_wind, "legacy_wind_reconstruction_role"),
+        "usage_role_counts": _value_count_map(df_wind, "usage_role"),
+        "strict_time_truth_counts": _value_count_map(df_wind, "strict_time_truth"),
+        "effective_strict_truth_counts": _value_count_map(df_wind, "effective_strict_truth"),
+        "time_is_point_observation_counts": _value_count_map(df_wind, "time_is_point_observation"),
+        "point_observation_time_available_counts": _value_count_map(df_wind, "point_observation_time_available"),
+        "batch_end_is_time_upper_bound_counts": _value_count_map(df_wind, "batch_end_is_time_upper_bound"),
+    }
+    with open(legacy_vs_conservative_counts_path, "w", encoding="utf-8") as f:
+        json.dump(legacy_vs_conservative_counts, f, ensure_ascii=False, indent=2)
+
+    stage1_policy_v2 = {
+        "official_compatibility_field": "wind_reconstruction_role",
+        "legacy_alias_field": "legacy_wind_reconstruction_role",
+        "official_strict_truth_value": "strict_truth_candidate",
+        "official_support_only_value": "support_only_not_strict_truth",
+        "conservative_policy": {
+            "amdar_time_semantics": "ground_receive_approx_downlink_batch_end_time",
+            "batch_end_is_time_upper_bound": True,
+            "point_observation_time_available": False,
+            "strict_time_truth": False,
+            "time_is_point_observation": False,
+            "usage_role": "support_only_not_strict_truth",
+        },
+        "effective_strict_truth_definition": "strict_time_truth AND time_is_point_observation AND met_value_quality == passed",
+        "note": "The official Stage2/Stage4 chain still consumes wind_reconstruction_role for compatibility. Conservative AMDAR semantics are exported in parallel fields and counts for branch research and future migration.",
+    }
+    with open(stage1_policy_v2_path, "w", encoding="utf-8") as f:
+        json.dump(stage1_policy_v2, f, ensure_ascii=False, indent=2)
 
     print("[Stage-1] 构建雷达索引...")
     radar_files = build_radar_files()
@@ -948,9 +1014,14 @@ def main():
         "wind_time_group_alignment_flag_counts": _value_count_map(df_wind, "time_group_alignment_flag"),
         "wind_reconstruction_role_counts": _value_count_map(df_wind, "wind_reconstruction_role"),
         "wind_reconstruction_exclusion_reason_counts": _value_count_map(df_wind, "wind_reconstruction_exclusion_reason"),
+        "wind_legacy_wind_reconstruction_role_counts": _value_count_map(df_wind, "legacy_wind_reconstruction_role"),
         "wind_usage_role_counts": _value_count_map(df_wind, "usage_role"),
         "wind_time_quality_counts": _value_count_map(df_wind, "time_quality"),
         "wind_strict_time_truth_counts": _value_count_map(df_wind, "strict_time_truth"),
+        "wind_effective_strict_truth_counts": _value_count_map(df_wind, "effective_strict_truth"),
+        "wind_time_is_point_observation_counts": _value_count_map(df_wind, "time_is_point_observation"),
+        "wind_point_observation_time_available_counts": _value_count_map(df_wind, "point_observation_time_available"),
+        "wind_batch_end_is_time_upper_bound_counts": _value_count_map(df_wind, "batch_end_is_time_upper_bound"),
         "wind_obs_conf_audit": {
             "obs_conf": _numeric_field_audit(df_wind, "obs_conf"),
             "obs_conf_raw_for_reconstruction": _numeric_field_audit(df_wind, "obs_conf_raw_for_reconstruction"),
@@ -964,12 +1035,16 @@ def main():
             "policy_note": "all duplicate same-timestamp AMDAR rows are treated as batch-like support fusion inputs only and are excluded from strict holdout truth candidates until per-point observation time can be recovered",
         },
         "amdar_time_semantics_policy": {
-            "amdar_batch_time_semantics": "batch_time_unknown_exact_type",
+            "amdar_batch_time_semantics": "ground_receive_approx_downlink_batch_end_time",
+            "batch_end_is_time_upper_bound": True,
             "default_strict_time_truth": False,
             "point_observation_time_available_by_default": False,
             "conservative_export": amdar_conservative_path,
             "batch_statistics_export": amdar_batch_statistics_path,
-            "note": "The existing wind_reconstruction_role split is preserved for current Stage2/Stage4 official evaluation compatibility; strict_time_truth is a separate, more conservative time-semantics field for future migration.",
+            "schema_export": stage1_schema_v2_path,
+            "policy_export": stage1_policy_v2_path,
+            "counts_export": legacy_vs_conservative_counts_path,
+            "note": "The existing wind_reconstruction_role split is preserved for current Stage2/Stage4 official evaluation compatibility; strict_time_truth and effective_strict_truth are separate, more conservative time-semantics fields for future migration.",
         },
     }
     with open(os.path.join(out_dir, "stage1_summary.json"), "w", encoding="utf-8") as f:

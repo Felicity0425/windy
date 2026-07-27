@@ -1,0 +1,111 @@
+{
+  "source": "confidence-only high-wind branch sensitivity; no real truth promotion and no full reconstruction in this audit.",
+  "branches": [
+    {
+      "branch_name": "A0_teacher_filter_all_gt150_rejected",
+      "tier_counts": {
+        "T2": 209377,
+        "T3": 121500,
+        "T4": 54319,
+        "T1": 45818,
+        "T0": 175
+      },
+      "amdar_tier_counts": {
+        "T2": 209377,
+        "T3": 121500,
+        "T4": 54313,
+        "T1": 45818
+      },
+      "amdar_t1_t2_coverage_pct": 59.208877793451634,
+      "high_wind_action_counts": {
+        "reject_gt150_teacher_filter": 4505
+      },
+      "high_wind_retained_rows_T1_T3": 0,
+      "high_wind_retained_pct_of_gt150": 0.0,
+      "gt200_retained_rows_T1_T3": 0,
+      "strict_truth_invariant_check": {
+        "amdar_t0_rows": 0,
+        "amdar_strict_holdout_rows": 0,
+        "turb_t0_rows": 175
+      },
+      "stage4_reconstruction_smoke": {
+        "status": "not_run_in_confidence_only_next_window_audit",
+        "reason": "This audit does not run full large-framework Stage4 windfield reconstruction; branch must still be validated on strict TURB holdout before claiming reconstruction benefit."
+      }
+    },
+    {
+      "branch_name": "A1_current_v3_rescue",
+      "tier_counts": {
+        "T2": 210537,
+        "T3": 123358,
+        "T4": 51301,
+        "T1": 45818,
+        "T0": 175
+      },
+      "amdar_tier_counts": {
+        "T2": 210537,
+        "T3": 123358,
+        "T4": 51295,
+        "T1": 45818
+      },
+      "amdar_t1_t2_coverage_pct": 59.47801432920039,
+      "high_wind_action_counts": {
+        "retain_150_200_review_low_confidence": 1712,
+        "retain_gt200_high_altitude_batch_supported": 1626,
+        "reject_gt150_unsupported": 1167
+      },
+      "high_wind_retained_rows_T1_T3": 3018,
+      "high_wind_retained_pct_of_gt150": 66.99223085460599,
+      "gt200_retained_rows_T1_T3": 1511,
+      "strict_truth_invariant_check": {
+        "amdar_t0_rows": 0,
+        "amdar_strict_holdout_rows": 0,
+        "turb_t0_rows": 175
+      },
+      "stage4_reconstruction_smoke": {
+        "status": "not_run_in_confidence_only_next_window_audit",
+        "reason": "This audit does not run full large-framework Stage4 windfield reconstruction; branch must still be validated on strict TURB holdout before claiming reconstruction benefit."
+      }
+    },
+    {
+      "branch_name": "A2_moderate_rescue_gt200_stricter",
+      "tier_counts": {
+        "T2": 210537,
+        "T3": 122089,
+        "T4": 52570,
+        "T1": 45818,
+        "T0": 175
+      },
+      "amdar_tier_counts": {
+        "T2": 210537,
+        "T3": 122089,
+        "T4": 52564,
+        "T1": 45818
+      },
+      "amdar_t1_t2_coverage_pct": 59.47801432920039,
+      "high_wind_action_counts": {
+        "reject_gt150_moderate_policy": 2551,
+        "retain_150_200_review_low_confidence": 1712,
+        "retain_gt200_strict_high_altitude_small_batch": 242
+      },
+      "high_wind_retained_rows_T1_T3": 1749,
+      "high_wind_retained_pct_of_gt150": 38.82352941176471,
+      "gt200_retained_rows_T1_T3": 242,
+      "strict_truth_invariant_check": {
+        "amdar_t0_rows": 0,
+        "amdar_strict_holdout_rows": 0,
+        "turb_t0_rows": 175
+      },
+      "stage4_reconstruction_smoke": {
+        "status": "not_run_in_confidence_only_next_window_audit",
+        "reason": "This audit does not run full large-framework Stage4 windfield reconstruction; branch must still be validated on strict TURB holdout before claiming reconstruction benefit."
+      }
+    }
+  ],
+  "quality_checks": {
+    "branch_a1_current_high_wind_retained_ge_2800": true,
+    "branch_a2_moderate_available_for_downstream_ablation": true,
+    "all_branches_keep_amdar_t0_zero": true,
+    "all_branches_keep_amdar_holdout_zero": true
+  }
+}

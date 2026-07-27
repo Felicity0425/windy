@@ -4,9 +4,12 @@
 # Local agent/editor/runtime state
 .agents/
 .codex/
+.claude/
 .vscode/
 .empty/
 .github_deploy_keys/
+nature-skills/
+tmp_stage2_amdar_check/
 
 # Python/runtime caches
 __pycache__/
@@ -26,6 +29,7 @@ env/
 *.log
 *.tmp
 *.bak
+*.idx
 nohup.out
 stage/logs/
 stage/logs_v2/
@@ -53,6 +57,7 @@ windpaper/
 *.grib2
 *.h5
 *.hdf5
+*.pdf
 
 # Archive bundles should be backed up outside normal Git.
 *.zip

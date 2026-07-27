@@ -1,0 +1,16 @@
+{
+  "input_path": "/data/LFT-W02_data/pengxu/stage1_output/clean_loc.parquet",
+  "out_dir": "优化/数据处理/stage2_v8_track_graph_smoke_20260716",
+  "slice_count": 25,
+  "workers": 25,
+  "smoke_group_modulus": 100,
+  "max_graph_gap_s": 1800,
+  "top_k": 5,
+  "overwrite": false,
+  "generated_at_utc": "2026-07-16T09:08:38.674701+00:00",
+  "POLARS_MAX_THREADS": "25",
+  "documented_v4_input": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_unified_stage0_1_2_optimized_20260701/stage2_adsb_qc_v4/adsb_qc_v4_rows.parquet",
+  "documented_v4_input_exists": false,
+  "input_fallback_reason": "The documented v4 derived directory is absent; the exact 19,162,638-row Stage1 ADS-B source is used to rebuild compatible audit fields.",
+  "space_policy": "25 mutually exclusive shards; each source point belongs to one shard; no 25 full-data copies."
+}

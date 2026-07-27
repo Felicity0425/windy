@@ -1,0 +1,27 @@
+{
+  "input_point_rows": 29,
+  "aggregate_csv": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/tp26_metrics_only_200_25w/shards/stage4_sensitivity_shard_12/tail_diagnostics/stage4_tail_diagnostics.csv",
+  "aggregate_md": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/tp26_metrics_only_200_25w/shards/stage4_sensitivity_shard_12/tail_diagnostics/stage4_tail_diagnostics.md",
+  "strata": [
+    "all_holdout_points",
+    "single_holdout_frame",
+    "multi_holdout_ge2_frame",
+    "multi_holdout_ge3_frame",
+    "alt_9_12km",
+    "alt_12km_plus",
+    "alt_12km_plus_single_holdout",
+    "context_only_nearest_support",
+    "alt_12km_plus_context_only",
+    "single_holdout_context_only",
+    "nearest_context_wind",
+    "nearest_current_wind_train",
+    "nearest_distance_gt4vox",
+    "role_gap_ge30mps",
+    "role_conflict_at_point",
+    "qc_review_flag",
+    "no_qc_review_flag",
+    "high_vector_error_ge30mps",
+    "extreme_truth_speed_ge120mps",
+    "extreme_prediction_speed_ge120mps"
+  ]
+}

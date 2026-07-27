@@ -24,6 +24,7 @@
 6. `P0-GFS / verify_gfs_background`：补齐 `GFS` 高层到 `100 hPa` 后，完成最终版背景体检。
 7. `S4-OI-DIAG`（GFS）：已经完成 report-only 诊断，不再是待办。
 8. `P0-ALT12-CUT`（新增）：完成 `<12km` 截断评估，量化“如果业务上不看 12km+，剩余部分会好多少”。
+9. `P0-AMDAR-STAGE1`（2026-06-28 新增）：完成 `AMDAR` Stage1 全审计与修正版实现，确认原始 `AMDAR` 时间应按“批次结束时间 / 批次下发时间”理解，而不是逐点真实观测时间。
 
 这一轮最重要的改变，不是某个指标提升了多少，而是**项目主线从“可能把 CMA 继续往 OI 推”修正为“CMA 留在 display-only，OI 主线改走 GFS forecast”**。
 
@@ -41,6 +42,7 @@
 | `S4-OI-DIAG` | 已完成 report-only | `GFS` 可做 weak/diagnostic background，但 official OI 仍需强约束 |
 | `S4-OI-*` | 未开始 | 现在已经有诊断依据，但只建议做 constrained OI 小步实验 |
 | `P0-ALT12-CUT` | 完成 | 证实 `12km+` 点数占 `41.89%`，但贡献 SSE `76.18%` |
+| `P0-AMDAR-STAGE1` | 完成一轮修正 | 已核实 `AMDAR` 批次时间语义；新 Stage1 输出与 Stage2 完全对齐；`ADS-B` 逐点时间重建仍属研究分支 |
 | `Stage5` | 未开始 | 当前不应提前进入 |
 
 ### 0.3 现在最关键的新结论
@@ -238,6 +240,84 @@ high-risk strata:
 它只是说明“如果改评估口径，结果会更好看”。
 ```
 
+#### 0.3.7 `AMDAR` Stage1 时间语义已经被重新界定
+
+`2026-06-28` 对原始 [amdar.xlsx](/data/LFT-W02_data/pengxu/20260224/amdar.xlsx) 的直接审计，已经确认：
+
+```text
+同一航班、同一时间戳、但空间上分散成很多点
+不是零星脏数据，而是主体现象
+```
+
+原始 workbook 统计结果为：
+
+```text
+总行数 = 431,008
+航班号 + 时间 分组数 = 56,365
+重复组数 = 49,750
+落在重复组中的总行数 = 424,393
+重复行占比 = 98.4652%
+重复组大小 P50 / P90 / P99 = 6 / 17 / 49
+重复组水平跨度 P50 / P90 / P99 = 137.10 km / 355.40 km / 666.95 km
+重复组垂直跨度 P50 / P90 / P99 = 530.35 m / 2980.94 m / 5227.32 m
+最大同时间组大小 = 50
+```
+
+这说明当前最保守、也最符合数据提供方解释的理解应当是：
+
+```text
+AMDAR 原始“时间（北京时）”
+更接近一批点的结束下发时间
+而不是每个点自己的逐点真实观测时间
+```
+
+进一步地，反查新 Stage1 输出可见：
+
+```text
+56,365 个同时间组里，有 155 个被切成多个原始连续块
+```
+
+占比不高，但足以说明：
+
+```text
+flight_number + time
+并不总是等于单一批次
+批次边界还要保留原始连续块
+```
+
+因此，当前 `AMDAR` 最稳妥的工程口径已经调整为：
+
+1. 在保守时间语义字段中：
+   - `strict_time_truth = false`
+   - `time_is_point_observation = false`
+   - `usage_role = support_only_not_strict_truth`
+2. 为了不打断现有 `Stage2 / Stage4` 官方 strict holdout 连续性，兼容性字段 `wind_reconstruction_role` 仍暂时保留旧主链口径。
+3. `ADS-B` 逐点时间重建值得继续推进，但只能作为研究分支，不能直接回写默认 `time_utc`。
+
+这一轮修正后的新 Stage1 目录已经过对齐检查：
+
+```text
+check_stage1_stage2_alignment:
+  ok = true
+  radar_frames_usable = 7395 / 7396
+  in_range_ratio = 1.0
+  unique_voxels = 816,392
+```
+
+因此到目前为止，关于 `AMDAR` 最准确的表述不是：
+
+```text
+AMDAR 时间已经被完全逐点还原
+```
+
+而是：
+
+```text
+AMDAR 原始批次时间语义已经被识别并被保守纳入 Stage1；
+Stage2/Stage4 对齐未被破坏；
+逐点时间重建仍是后续研究问题
+```
+
 ### 0.4 为什么项目现在要验证“背景 + 观测”这条路线
 
 这个问题在 `2026-06-12` 版本里还没有被完全展开。  
@@ -289,6 +369,7 @@ GFS 能不能直接生成更好的最终风场
 2. 若坚持全高度 official 目标，只做 constrained S4-OI-1a / 1b
 3. 若业务允许改成 <=12km，则同步重定义 baseline / gate / summary
 4. 与此同时，补 S4-CMA-M1 的 full-200 pairwise 封口
+5. AMDAR 主链保持 conservative semantics，`ADS-B` 时间重建只走研究分支
 ```
 
 不建议当前直接做的事：
@@ -487,9 +568,11 @@ stage/stage1_prepare.py
 1. 把 Excel workbook 按 sheet 转成 parquet。
 2. 统一时间到 UTC。
 3. 清洗经纬度、高度、航班号等字段。
-4. 对 AMDAR/TURB 风向风速转成 `u_wind/v_wind`。
-5. 对 location 的 heading + ground speed 转成 `u_motion/v_motion`。
-6. 扫描雷达文件，建立时间和文件路径索引。
+4. 对 `AMDAR` 保留原始连续块顺序，避免把少量“同航班、同时间但非连续”的记录误并成同一批次。
+5. 对 AMDAR/TURB 风向风速转成 `u_wind/v_wind`。
+6. 对 `AMDAR` 额外标记 `strict_time_truth / time_is_point_observation / usage_role` 等时间语义字段。
+7. 对 location 的 heading + ground speed 转成 `u_motion/v_motion`。
+8. 扫描雷达文件，建立时间和文件路径索引。
 
 #### 关键公式
 
@@ -519,6 +602,9 @@ v_motion = ground_speed_ms * cos(heading_deg * pi / 180)
 ```text
 u_motion / v_motion = 飞机地面运动
 不是风
+
+AMDAR 原始时间 = 更接近批次结束 / 下发时间
+不是每个点的逐点真实观测时刻
 ```
 
 ---
@@ -762,7 +848,8 @@ Residual PINN 的信号存在，但很小
 
 | 数据 | 项目内角色 | 能否做 truth | 备注 |
 | --- | --- | --- | --- |
-| AMDAR/TURB `u_wind/v_wind` | 正式风观测 | 能 | Stage4 唯一官方真值来源 |
+| AMDAR `u_wind/v_wind` | aircraft wind observation（批次语义） | 不能直接当 strict point-time truth | 保守口径下 `strict_time_truth = false`、`usage_role = support_only_not_strict_truth`；兼容性字段仍暂保留旧主链 |
+| TURB `u_wind/v_wind` | 正式风观测 | 能 | 当前保守口径下仍可作为 strict truth candidate |
 | location `u_motion/v_motion` | 飞机运动诊断 | 不能 | 不是 atmospheric wind |
 | radar PNG intensity | 云/雷达背景 | 不能 | 不是 Doppler velocity |
 | CMA/CRA40/GFS/ERA | 弱背景、先验、条件输入 | 不能 | 只能 background/prior |
@@ -1274,6 +1361,7 @@ context 不是同步观测。
 3. 当前验证只对 aircraft holdout 覆盖到的位置成立。
 4. 剩余误差主要来自高空、稀疏支撑、role conflict、representation error。
 5. Stage5 residual PINN 只有 narrow gated point-level signal，不能当默认方法。
+6. 截至 `2026-06-28`，`AMDAR` 原始时间应解释为批次结束时间；保守主链下不应把整批 `AMDAR` 直接表述为 strict point-time truth。
 
 ### 13.2 不能写成主结论的东西
 

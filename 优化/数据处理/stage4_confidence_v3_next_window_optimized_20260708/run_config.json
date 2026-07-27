@@ -1,0 +1,9 @@
+{
+  "out_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage4_confidence_v3_next_window_optimized_20260708",
+  "stage1_plan4_dir": "/data/LFT-W02_data/pengxu/stage1_output",
+  "stage1_v3_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/amdar_unified_stage1_2_complete_optimized_20260701/stage1_qc_resolution_v3",
+  "stage2_v7_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage2_adsb_qc_v7_optimized_20260706",
+  "stage3_v8_dir": "/data/LFT-W02_data/pengxu/优化/数据处理/stage3_pseudo_amdar_v8_optimized_20260707/stage3_pseudo_amdar_v8",
+  "slice_count": 25,
+  "polars_threads": "25"
+}

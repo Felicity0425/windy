@@ -1,0 +1,48 @@
+{
+  "dataset": "gfs",
+  "source": "NOAA GFS public AWS archive selected by .idx byte ranges",
+  "note": "Historical GFS background fields for Stage5 ROI priors; not reconstruction truth.",
+  "records": [
+    {
+      "time_str": "20260124000000",
+      "cycle": "2026012400",
+      "forecast_hour": 0,
+      "url": "https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.20260124/00/atmos/gfs.t00z.pgrb2.0p25.f000",
+      "idx_url": "https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.20260124/00/atmos/gfs.t00z.pgrb2.0p25.f000.idx",
+      "idx_target": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/gfs_historical_aws_test/gfs_roi_20260124000000.idx",
+      "target": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/gfs_historical_aws_test/gfs_roi_20260124000000.grib2",
+      "npz_target": "/data/LFT-W02_data/pengxu/优化/stage4_cma_m1_light_demo_20260625/gfs_historical_aws_test_npz/gfs_roi_20260124000000.npz",
+      "variables": [
+        "UGRD",
+        "VGRD"
+      ],
+      "pressure_levels": [
+        1000,
+        975,
+        950,
+        925,
+        900,
+        850,
+        800,
+        750,
+        700,
+        650,
+        600,
+        550,
+        500,
+        450,
+        400,
+        350,
+        300,
+        250,
+        200
+      ],
+      "bbox_left_right_top_bottom": [
+        106.5,
+        117.5,
+        37.0,
+        17.0
+      ]
+    }
+  ]
+}

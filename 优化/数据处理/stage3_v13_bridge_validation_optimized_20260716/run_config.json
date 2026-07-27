@@ -1,0 +1,13 @@
+{
+  "stage2_dir": "优化/数据处理/stage2_v8_track_graph_optimized_20260716",
+  "out_dir": "优化/数据处理/stage3_v13_bridge_validation_optimized_20260716",
+  "slice_count": 25,
+  "workers": 25,
+  "max_base_tracklets": 15000,
+  "minimum_points": 12,
+  "seed": 20260716,
+  "generated_at_utc": "2026-07-16T09:37:21.902153+00:00",
+  "POLARS_MAX_THREADS": "25",
+  "space_policy": "Shared compact case bank and reports; no full-data copies per worker.",
+  "locked_test_policy": "Thresholds and calibration are frozen before locked-test reporting."
+}

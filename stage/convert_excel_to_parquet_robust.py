@@ -30,6 +30,11 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 
+FEET_TO_METERS = 0.3048
+WIND_FEET_SHARE_THRESHOLD = 0.20
+MAX_REASONABLE_ALT_METERS = 20000.0
+
+
 @dataclass
 class SheetResult:
     source_file: str
@@ -177,6 +182,92 @@ def _find_first_existing_col(columns, candidates):
     return None
 
 
+def _coerce_altitude_numeric(series, pd):
+    return pd.to_numeric(series, errors="coerce")
+
+
+def _sanitize_numeric_series(series, pd):
+    numeric = pd.to_numeric(series, errors="coerce")
+    return numeric.mask(~numeric.isna() & ~numeric.map(pd.notna), pd.NA).replace([float("inf"), float("-inf")], pd.NA)
+
+
+def _nullify_nonfinite_numeric_columns(df, pd):
+    out = df.copy()
+    for col in out.columns:
+        try:
+            if pd.api.types.is_numeric_dtype(out[col]):
+                out[col] = pd.to_numeric(out[col], errors="coerce").replace([float("inf"), float("-inf")], pd.NA)
+        except Exception:
+            continue
+    return out
+
+
+def _infer_altitude_unit_mode(series, source_hint: str, pd) -> str:
+    numeric = _coerce_altitude_numeric(series, pd).dropna()
+    if len(numeric) == 0:
+        return "missing_values"
+
+    median_alt = float(numeric.quantile(0.5))
+    share_gt_15000 = float((numeric > 15000.0).mean())
+    share_20k_45k = float(((numeric >= 20000.0) & (numeric <= 45000.0)).mean())
+
+    if source_hint in {"amdar", "turb", "wind"}:
+        if median_alt > 15000.0 or share_gt_15000 > 0.50 or share_20k_45k > WIND_FEET_SHARE_THRESHOLD:
+            return "feet_source"
+        return "meters_source"
+
+    if share_20k_45k > 0.0:
+        return "meters_source_with_feet_anomalies"
+    return "meters_source"
+
+
+def _normalize_altitude_series(series, source_hint: str, pd):
+    numeric = _coerce_altitude_numeric(series, pd)
+    unit_mode = _infer_altitude_unit_mode(series, source_hint, pd)
+
+    if source_hint in {"amdar", "turb", "wind"} and unit_mode == "feet_source":
+        alt_meters = numeric * FEET_TO_METERS
+        state = pd.Series("feet_to_meters_source", index=series.index, dtype="string")
+        outlier_mask = alt_meters > MAX_REASONABLE_ALT_METERS
+        alt_meters = alt_meters.mask(outlier_mask)
+        state.loc[outlier_mask.fillna(False)] = "altitude_outlier_nullified"
+    elif source_hint == "loc":
+        feet_mask = numeric.notna() & (numeric > 15000.0) & (numeric <= 45000.0)
+        alt_meters = numeric.where(~feet_mask, numeric * FEET_TO_METERS)
+        state = pd.Series("meters_preserved", index=series.index, dtype="string")
+        state.loc[feet_mask] = "feet_to_meters_row"
+    else:
+        alt_meters = numeric
+        state = pd.Series("meters_preserved", index=series.index, dtype="string")
+
+    state.loc[numeric.isna()] = "missing_altitude"
+    mode = pd.Series(unit_mode, index=series.index, dtype="string")
+    return alt_meters, state, mode
+
+
+def _numeric_series_audit(series, pd):
+    numeric = pd.to_numeric(series, errors="coerce")
+    out = {
+        "rows": int(len(numeric)),
+        "null_rows": int(numeric.isna().sum()),
+        "nan_rows": int(numeric.isna().sum()),
+        "finite_rows": 0,
+        "min": None,
+        "median": None,
+        "p90": None,
+        "max": None,
+    }
+    finite = numeric.replace([float("inf"), float("-inf")], pd.NA).dropna()
+    out["finite_rows"] = int(len(finite))
+    if len(finite) == 0:
+        return out
+    out["min"] = float(finite.min())
+    out["median"] = float(finite.quantile(0.5))
+    out["p90"] = float(finite.quantile(0.9))
+    out["max"] = float(finite.max())
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Coordinate parsing
 # ---------------------------------------------------------------------------
@@ -306,24 +397,26 @@ def _normalize_location_df(df, pd):
 
     if "高度" in out.columns:
         out["高度_raw"] = out["高度"]
-        out["alt_meters"] = pd.to_numeric(out["高度"], errors="coerce")
+        out["alt_meters"], out["altitude_unit_state"], out["altitude_unit_mode"] = _normalize_altitude_series(out["高度"], "loc", pd)
     else:
         out["高度_raw"] = pd.NA
         out["alt_meters"] = pd.NA
+        out["altitude_unit_state"] = pd.NA
+        out["altitude_unit_mode"] = pd.NA
 
     # ----------------------------
     # 航向和地速
     # ----------------------------
     if "航向角" in out.columns:
         out["航向角_raw"] = out["航向角"]
-        out["heading_deg"] = pd.to_numeric(out["航向角"], errors="coerce")
+        out["heading_deg"] = _sanitize_numeric_series(out["航向角"], pd)
     else:
         out["航向角_raw"] = pd.NA
         out["heading_deg"] = pd.NA
 
     if "地速" in out.columns:
         out["地速_raw"] = out["地速"]
-        out["ground_speed_ms"] = pd.to_numeric(out["地速"], errors="coerce") * (1000.0 / 3600.0)
+        out["ground_speed_ms"] = _sanitize_numeric_series(out["地速"], pd) * (1000.0 / 3600.0)
     else:
         out["地速_raw"] = pd.NA
         out["ground_speed_ms"] = pd.NA
@@ -342,15 +435,15 @@ def _normalize_location_df(df, pd):
     # 运动分量：供 Stage 1/2/3 下游使用
     # ----------------------------
     if "heading_deg" in out.columns and "ground_speed_ms" in out.columns:
-        rad = pd.to_numeric(out["heading_deg"], errors="coerce") * (3.141592653589793 / 180.0)
-        spd = pd.to_numeric(out["ground_speed_ms"], errors="coerce")
+        rad = _sanitize_numeric_series(out["heading_deg"], pd) * (3.141592653589793 / 180.0)
+        spd = _sanitize_numeric_series(out["ground_speed_ms"], pd)
         out["u_motion"] = spd * rad.map(lambda x: float(__import__("math").sin(x)) if pd.notna(x) else pd.NA)
         out["v_motion"] = spd * rad.map(lambda x: float(__import__("math").cos(x)) if pd.notna(x) else pd.NA)
     else:
         out["u_motion"] = pd.NA
         out["v_motion"] = pd.NA
 
-    return out
+    return _nullify_nonfinite_numeric_columns(out, pd)
 
 
 def _normalize_amdar_df(df, pd):
@@ -402,10 +495,12 @@ def _normalize_amdar_df(df, pd):
 
     if "高度" in out.columns:
         out["高度_raw"] = out["高度"]
-        out["alt_meters"] = pd.to_numeric(out["高度"], errors="coerce")
+        out["alt_meters"], out["altitude_unit_state"], out["altitude_unit_mode"] = _normalize_altitude_series(out["高度"], "amdar", pd)
     else:
         out["高度_raw"] = pd.NA
         out["alt_meters"] = pd.NA
+        out["altitude_unit_state"] = pd.NA
+        out["altitude_unit_mode"] = pd.NA
 
     # ----------------------------
     # 风向、风速与风矢量
@@ -415,21 +510,21 @@ def _normalize_amdar_df(df, pd):
             out[f"{col}_raw"] = out[col]
 
     if "风向" in out.columns:
-        out["wind_dir"] = pd.to_numeric(out["风向"], errors="coerce")
+        out["wind_dir"] = _sanitize_numeric_series(out["风向"], pd)
     elif "风向_raw" in out.columns:
-        out["wind_dir"] = pd.to_numeric(out["风向_raw"], errors="coerce")
+        out["wind_dir"] = _sanitize_numeric_series(out["风向_raw"], pd)
     else:
         out["wind_dir"] = pd.NA
 
     if "风速" in out.columns:
-        out["wind_speed"] = pd.to_numeric(out["风速"], errors="coerce")
+        out["wind_speed"] = _sanitize_numeric_series(out["风速"], pd)
     elif "风速_raw" in out.columns:
-        out["wind_speed"] = pd.to_numeric(out["风速_raw"], errors="coerce")
+        out["wind_speed"] = _sanitize_numeric_series(out["风速_raw"], pd)
     else:
         out["wind_speed"] = pd.NA
 
-    rad = pd.to_numeric(out["wind_dir"], errors="coerce") * (3.141592653589793 / 180.0)
-    spd = pd.to_numeric(out["wind_speed"], errors="coerce")
+    rad = _sanitize_numeric_series(out["wind_dir"], pd) * (3.141592653589793 / 180.0)
+    spd = _sanitize_numeric_series(out["wind_speed"], pd)
     out["u_wind"] = spd * rad.map(lambda x: float(__import__("math").sin(x)) if pd.notna(x) else pd.NA) * -1
     out["v_wind"] = spd * rad.map(lambda x: float(__import__("math").cos(x)) if pd.notna(x) else pd.NA) * -1
 
@@ -443,7 +538,7 @@ def _normalize_amdar_df(df, pd):
     else:
         out["flight_id"] = pd.NA
 
-    return out
+    return _nullify_nonfinite_numeric_columns(out, pd)
 
 
 def _normalize_turb_df(df, pd):
@@ -493,10 +588,12 @@ def _normalize_turb_df(df, pd):
 
     if "高度" in out.columns:
         out["高度_raw"] = out["高度"]
-        out["alt_meters"] = pd.to_numeric(out["高度"], errors="coerce")
+        out["alt_meters"], out["altitude_unit_state"], out["altitude_unit_mode"] = _normalize_altitude_series(out["高度"], "turb", pd)
     else:
         out["高度_raw"] = pd.NA
         out["alt_meters"] = pd.NA
+        out["altitude_unit_state"] = pd.NA
+        out["altitude_unit_mode"] = pd.NA
 
     # ----------------------------
     # 风、姿态、扰动字段
@@ -506,17 +603,17 @@ def _normalize_turb_df(df, pd):
             out[f"{col}_raw"] = out[col]
 
     if "风向" in out.columns:
-        out["wind_dir"] = pd.to_numeric(out["风向"], errors="coerce")
+        out["wind_dir"] = _sanitize_numeric_series(out["风向"], pd)
     else:
         out["wind_dir"] = pd.NA
 
     if "风速" in out.columns:
-        out["wind_speed"] = pd.to_numeric(out["风速"], errors="coerce")
+        out["wind_speed"] = _sanitize_numeric_series(out["风速"], pd)
     else:
         out["wind_speed"] = pd.NA
 
-    rad = pd.to_numeric(out["wind_dir"], errors="coerce") * (3.141592653589793 / 180.0)
-    spd = pd.to_numeric(out["wind_speed"], errors="coerce")
+    rad = _sanitize_numeric_series(out["wind_dir"], pd) * (3.141592653589793 / 180.0)
+    spd = _sanitize_numeric_series(out["wind_speed"], pd)
     out["u_wind"] = spd * rad.map(lambda x: float(__import__("math").sin(x)) if pd.notna(x) else pd.NA) * -1
     out["v_wind"] = spd * rad.map(lambda x: float(__import__("math").cos(x)) if pd.notna(x) else pd.NA) * -1
 
@@ -530,7 +627,7 @@ def _normalize_turb_df(df, pd):
     else:
         out["flight_id"] = pd.NA
 
-    return out
+    return _nullify_nonfinite_numeric_columns(out, pd)
 
 
 def _normalize_generic_df(df, pd):
@@ -543,8 +640,8 @@ def _normalize_generic_df(df, pd):
     if "接收时间（UTC）" in out.columns:
         out["time_utc"] = out["接收时间（UTC）"].map(_parse_excel_time_to_dt)
     if "高度" in out.columns:
-        out["alt_meters"] = pd.to_numeric(out["高度"], errors="coerce")
-    return out
+        out["alt_meters"], out["altitude_unit_state"], out["altitude_unit_mode"] = _normalize_altitude_series(out["高度"], "generic", pd)
+    return _nullify_nonfinite_numeric_columns(out, pd)
 
 
 # ---------------------------------------------------------------------------

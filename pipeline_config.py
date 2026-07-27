@@ -83,6 +83,8 @@ ADAPTIVE_MIN_OBS_CAP = int(os.environ.get("WIND_ADAPTIVE_MIN_OBS_CAP", "8"))
 
 # Source confidence
 SOURCE_CONFIDENCE = {"amdar": 1.0, "turb": 0.9, "loc_motion": 0.7}
+AMDAR_BATCH_HSPAN_THRESHOLD_DEG = float(os.environ.get("WIND_AMDAR_BATCH_HSPAN_THRESHOLD_DEG", "0.5"))
+AMDAR_BATCH_SUPPORT_CONFIDENCE = float(os.environ.get("WIND_AMDAR_BATCH_SUPPORT_CONFIDENCE", "0.35"))
 
 # Likelihood parameters
 TIME_LIKELIHOOD_SIGMA_SECONDS = 360.0

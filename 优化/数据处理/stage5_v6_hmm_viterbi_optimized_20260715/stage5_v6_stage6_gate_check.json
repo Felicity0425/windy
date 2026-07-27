@@ -1,0 +1,22 @@
+{
+  "generated_date": "2026-07-15",
+  "large_framework_stage": "Stage5 complete; Stage6 gate decision",
+  "stage5_v6_safety_gate": true,
+  "stage5_v6_merge_target": false,
+  "baseline_unique_batches": 198,
+  "incremental_unique_batches": 7,
+  "final_unique_batches": 205,
+  "final_unique_rows": 274,
+  "ambiguous_mixture_batches": 20,
+  "locked_wrong_leg_or_hard_negative_rate_proxy": 0.005820955439582497,
+  "truth_invariants_preserved": true,
+  "stage6_allowed_mode": "conservative_diagnostic_only",
+  "stage6_rules": [
+    "Unique matched rows may be narrow support-only seeds.",
+    "Mixture batches must remain calibrated mixtures and must not count as unique accepted.",
+    "Unmatched AMDAR must retain batch-interval or physically constrained broad distributions.",
+    "estimated_time_utc and batch end are not point-observation truth.",
+    "AMDAR effective_strict_truth and holdout_eligible remain false."
+  ],
+  "reason_target_branch_blocked": "The SOTA merge gate requires at least 10 incremental unique batches; the final safe result adds 7. Additional local threshold or heuristic relaxation is not supported by Stage3 v11 validation."
+}
