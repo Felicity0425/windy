@@ -1,390 +1,117 @@
-# windy
+# windy / centralized_v1
 
-`windy` is a research codebase for sparse aircraft-observation wind-field
-reconstruction. The current mainline is `centralized_v1`, which organizes
-aircraft wind observations, aircraft trajectory/motion records, radar/cloud
-context, and weak meteorological background fields into a strictly validated
-3D wind reconstruction workflow.
+Research code for **sparse aircraft-observation 3D horizontal wind-field reconstruction**. The project combines AMDAR/TURB wind reports, ADS-B trajectory evidence, radar time-space organization, and weak meteorological background fields under strict aircraft holdout validation.
 
-This repository is not an operational aviation warning system. Current outputs
-should be interpreted as research-grade sparse 3D wind reconstruction products
-under strict aircraft hold-out validation.
+> This is a research repository, not an operational aviation warning system. `support-only`, pseudo-validation, graph candidates, display fills, and report-only diagnostics must not be interpreted as official truth or operational forecasts.
 
 ## Current status
 
-As of `2026-06-26`, the project has completed a new Stage4 audit-and-handoff
-round focused on:
+The latest verified optimization results are from July 2026; the latest visible report-only representation-error diagnostic is from June 2026. No newer formal full-scale experiment is present in the local project tree as of `2026-09-11`.
 
-- `CMA/CRA40` data verification
-- background-independence (`P0-LEAK`) audit
-- Stage4 error-floor estimation
-- `S4-CMA-M1` display-only weak-background product branch
-- `GFS forecast` historical background acquisition for the next `OI` line
+| Area | Latest verified result | Status |
+|---|---:|---|
+| Stage2 v8 ADS-B track graph | `19,162,638` input points, `19,154,894` clean points, `11,306` physical candidate edges | quality gates passed; edges remain priors |
+| Stage3 v13 bridge validation | `27,599` locked cases, wrong path `0.0827%`, ECE `0.000321` | all hard gates passed |
+| Stage5 v7 calibrated partial matching | `229` unique batches / `345` matched rows | safety and merge gates passed |
+| Stage4 strict holdout baseline | `200` frames / `530` holdout points, vector RMSE `14.7690 m/s` | official comparison baseline |
+| High-altitude stratum | `12 km+` vector RMSE about `20.012 m/s` | primary unresolved risk |
+| Official OI / graph full merge | not completed | do not promote yet |
 
-The practical state is:
-
-- `CMA-RA` is treated as a **reanalysis / analysis product**, not a pure
-  independent forecast background.
-- `CMA` is currently safe for **display-only weak background fill**, but not
-  yet cleared as the main background for `OI / innovation / Desroziers`
-  claims.
-- `GFS forecast` is the current preferred candidate background for the next
-  `S4-OI-DIAG` stage.
-- The `200`-frame `GFS` historical background set is now complete:
-  `178/178` unique sources, `200/200` frame NPZs, `failed_count = 0`.
-
-The most important project-level conclusion from this round is:
+## Main idea
 
 ```text
-CMA may be closer to reality as a reanalysis
-but GFS is currently the cleaner candidate background for OI-style diagnostics
+raw aircraft / radar inputs
+  -> Stage1 semantic QC and unit normalization
+  -> Stage2 observation organization and ADS-B track graph
+  -> Stage3 independent pseudo/corruption/bridge validation
+  -> Stage4 confidence tiers and strict aircraft holdout reconstruction
+  -> Stage5 sequence matching and calibrated partial matching
+  -> Stage6 sensitivity and official promotion checks
 ```
 
-## Current mainline
+Important semantic rules:
 
-The active workflow is:
-
-```text
-Stage1 clean source + radar index
-  -> Stage2 all-in observation voxelization
-  -> Stage3 Ground Center payload
-  -> Stage4 strict aircraft hold-out reconstruction
-  -> Stage4 product / background branches
-  -> optional Stage5 residual refinement (not current default)
-```
-
-The current near-term Stage4 execution order is:
-
-```text
-P0-FRAME   input format check
-P0-LEAK    background independence audit
-P0-CMA     CMA/CRA40 readability and coverage audit
-P0-FLOOR   practical error-floor estimate
-P0-GFS     historical forecast background acquisition + verification
-S4-CMA-M1  display-only low-confidence background fill
-S4-OI-DIAG report-only innovation / obs_influence diagnostics
-S4-OI-*    only after background diagnostics support it
-```
-
-Do not default back to older frozen Stage4/Stage5 chains unless the task is
-explicitly historical comparison.
-
-## What changed after the older handover docs
-
-The earlier handover documents still explain the project foundation well, but
-the current practical route has changed in three important ways:
-
-1. `CMA-RA` is no longer treated as the natural next-step `OI` background.
-   It is currently a `display-only` / reference / product-completeness
-   background branch.
-2. `GFS forecast` has been adopted as the next candidate background for
-   `S4-OI-DIAG`, because background independence matters more than raw
-   closeness-to-truth at this stage.
-3. The next main question is no longer “which heuristic interpolation tweak
-   should we try next”, but:
-
-```text
-does background + observations actually help the hard parts of the problem
-without damaging the already-stable parts?
-```
+- AMDAR batch timestamps are not automatically point-observation truth.
+- ADS-B location and motion are trajectory evidence, not atmospheric wind truth.
+- `graph edge` means a candidate connection, not an accepted match.
+- CMA/CRA40 is currently display/reference background; it is not proven independent of the holdout.
+- GFS is the preferred candidate for constrained background diagnostics, not yet an official blend.
+- Official accuracy is evaluated on strict aircraft holdout points only.
 
 ## Repository layout
 
 ```text
-stage/centralized_v1/
-  core/
-    centralized_stage2_multimodal.py
-    centralized_stage3_center.py
-    centralized_stage4_ground_recon.py
-    centralized_stage4_sensitivity.py
-    centralized_stage4_stratified_eval.py
-    centralized_stage4_error_trace.py
-    centralized_stage4_error_floor_estimate.py
-    verify_cma_grib.py
-    centralized_cma_ra_virtual_radial_3dvar.py
-
 stage/
-  download_stage5_gfs_aws_historical_roi.py
-  download_stage5_gfs_aws_cached_batch.py
+  centralized_v1/core/       Original centralized_v1 Stage1-5 implementation
+  optimization/              Latest Stage2 v8 / Stage3 v12-v13 / Stage4 v3 / Stage5 v6-v7 scripts
+  *.py                       Data preparation, reconstruction, background and reporting utilities
+
+docs/
+  centralized_v1_latest_results_summary_20260911.md
+  results/                   Latest formal optimization reports and compact JSON artifacts
+  baselines/                 Original Stage4, OI, representation-error and PINN comparisons
 
 workflow/
-  centralized_v1_docs/
-  plan/
+  wiki/                      Curated methodology and literature notes
+  centralized_v1_docs/      Compact pipeline explanations
 
-优化/
-  stage4_cma_m1_light_demo_20260625/
+stage1_output/
+  *.json                     Lightweight manifests and dataset summaries
+  *.parquet                  Local-only data; intentionally not distributed in the repository
 ```
 
-Large generated outputs, raw GRIB files, frame NPZs, Excel workbooks, and
-local runtime artifacts are not intended to be fully versioned in Git. Most
-large local outputs live under:
+Large raw inputs, GRIB files, Excel workbooks, Parquet data, NPZ fields, generated images, shard-level logs, and temporary runtime outputs are intentionally excluded from the GitHub working tree. They remain available in the local project workspace when needed.
+
+## Key documentation
+
+- [Latest full project summary](docs/centralized_v1_latest_results_summary_20260911.md)
+- [Stage2 v8 / Stage3 v13 detailed explanation](docs/results/stage2_stage3_v8_v13_explanation.md)
+- [Stage3 / Stage5 track-graph weekly report](docs/results/stage3_stage5_track_graph_weekly_report.md)
+- [Stage2 v8 formal result](docs/results/stage2_v8_results.md)
+- [Stage3 v13 formal result](docs/results/stage3_v13_results.md)
+- [Stage5 v7 formal result](docs/results/stage5_v7_results.md)
+- [Original Stage4 strict-holdout comparison](docs/baselines/stage4_three_method_compare.md)
+- [Stage4 OI diagnostic boundary](docs/baselines/stage4_oi_diagnostic.md)
+- [Stage4 representation-error diagnostic](docs/baselines/stage4_representation_error_report.md)
+- [Stage5 residual/PINN baseline](docs/baselines/stage5_pinn_dataset.md)
+
+## Latest optimization code
+
+The latest optimization scripts are collected under `stage/optimization/`:
+
+- `amdar_unified_stage0_stage1_stage2_optimization_20260701.py`
+- `amdar_unified_stage2_v8_track_graph_20260716.py`
+- `amdar_unified_stage3_v12_drop_dtw_20260716.py`
+- `amdar_unified_stage3_v13_bridge_validation_20260716.py`
+- `amdar_unified_stage4_confidence_v3_next_window_20260708.py`
+- `amdar_unified_stage5_v6_hmm_viterbi_20260715.py`
+- `amdar_unified_stage5_v7_calibrated_partial_20260716.py`
+- `amdar_unified_stage6_time_uncertainty_20260701.py`
+
+The original Stage1-4 pipeline remains under `stage/centralized_v1/core/` for historical reproduction and baseline comparison.
+
+## Reproduction boundary
+
+The repository contains source code and compact manifests, not the private/raw observation corpus. A local reproduction requires the project data workspace and the appropriate Python environment. Typical inputs are:
 
 ```text
-/data/LFT-W02_data/pengxu/centralized_v1_output
-/data/LFT-W02_data/pengxu/优化
+stage1_output/clean_wind.parquet
+stage1_output/clean_loc.parquet
+stage1_output/radar_index.json
+stage1_output/frame_window_index.json
 ```
 
-## Stage summary
+Do not use aircraft motion as wind, do not use holdout rows in fusion, and do not promote graph candidates or display-only background fields without a new strict holdout experiment.
 
-### Stage1
+## Next authorized experiments
 
-Stage1 prepares stable cleaned inputs:
+1. Freeze Stage5 v7 `229/345` as a regression set.
+2. Run a small Stage5 v8 graph audit with `unique`, `mixture`, and `reject` outputs separated.
+3. Compare Stage6 S0-S4 on the same strict aircraft holdout.
+4. Run GFS constrained OI B0-B3 with an explicit background-independence audit.
+5. Analyze the `12 km+` representation-error and localization failure modes.
+6. Promote only when weighted RMSE, tail risk, light-wind behavior, high-altitude metrics, and leakage gates all pass.
 
-- `clean_wind.parquet`: AMDAR/TURB aircraft wind observations
-- `clean_loc.parquet`: aircraft location and motion records
-- `radar_index.json`: radar/cloud image time index
+## License and data note
 
-Important rule:
-
-```text
-aircraft motion (u_motion, v_motion) is diagnostic only
-it is not atmospheric wind truth
-```
-
-### Stage2
-
-Stage2 is all-in observation organization, not final wind reconstruction. It
-voxelizes sparse observations and context onto the Stage4 grid.
-
-Key Stage2 records:
-
-- `wind_records`: the only strict hold-out truth candidates for Stage4
-- `context_wind_records`: historical support observations, not current truth
-- `loc_records`: aircraft trajectory/location voxels
-- `motion_records`: motion diagnostics, not wind truth
-- `cloud_2d`: radar/cloud context for visualization and spatial support
-
-### Stage3
-
-Stage3 is the Ground Center payload layer. It packages Stage2 frame records
-into Stage4-consumable payloads and confidence summaries. It does not produce
-the final 3D wind field.
-
-### Stage4
-
-Stage4 is the first stage that generates 3D reconstructed wind fields.
-
-Its strict validation rule is:
-
-```text
-holdout truth = selected current-window wind_records
-fusion input  = non-holdout current wind_records + context_wind_records
-```
-
-Forbidden:
-
-- hold-out wind entering fusion
-- motion records used as wind
-- context motion used as wind
-- CMA used as aircraft truth
-
-Required flags:
-
-```text
-strict_holdout_no_leakage = true
-motion_used_as_wind = false
-```
-
-## Current audited baseline
-
-The current `200`-frame Stage4 smoke baseline has been reproduced under a
-lightweight `25`-worker metrics-only run:
-
-```text
-holdout points        = 530
-vector RMSE           = 14.7690 m/s
-vector MAE            = 6.8545 m/s
-frame mean RMSE       = 8.2243 m/s
-frame P95 RMSE        = 27.9861 m/s
-frame P99 RMSE        = 58.7838 m/s
-12km+ RMSE            = 19.9177 m/s
-light-wind RMSE       = 5.1959 m/s
-floor10 relative MAE  = 0.2828
-```
-
-See:
-
-- [优化/stage4_cma_m1_light_demo_20260625/reports/demo_summary_20260625.json](优化/stage4_cma_m1_light_demo_20260625/reports/demo_summary_20260625.json)
-- [优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md](优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md)
-
-The current practical floor estimate is:
-
-```text
-baseline vector RMSE = 14.7690
-proxy floor          = 11.1126
-remaining gap        = 3.6564 m/s
-12km+ baseline       = 19.9177
-12km+ proxy floor    = 14.1689
-```
-
-This means the project still has room to improve, but the room is finite, and
-`12km+` remains the main hard stratum.
-
-## CMA and GFS roles
-
-The repository currently distinguishes background roles carefully:
-
-### `CMA-RA / CRA40`
-
-Use cases:
-
-- display-only weak background fill
-- reference large-scale field
-- product completeness branch
-
-Do not currently use as:
-
-- strict independent `OI` background
-- direct `innovation` / `Desroziers` background for formal claims
-
-Reason:
-
-```text
-CMA-RA is a reanalysis / analysis product
-it may be closer to reality than forecast background
-but background independence from project holdout observations is not proven
-```
-
-Current practical meaning:
-
-```text
-CMA may be the more realistic-looking background
-but it is not currently the safer background for formal OI-grade claims
-```
-
-### `GFS forecast`
-
-Use cases:
-
-- candidate independent background
-- `S4-OI-DIAG` innovation diagnostics
-- future `oi_diag_approx / local_oi` experiments
-
-Current downloaded set:
-
-```text
-horizontal resolution ~ 0.25 degree
-levels currently extracted = 1000 ... 200 hPa
-u/v background only
-200/200 target frames completed
-```
-
-Current note:
-
-```text
-the downloaded GFS set is sufficient for first-stage OI diagnostics
-but the present default extraction tops out near 200 hPa (~11.8 km)
-so a later 150/100 hPa refresh may be useful for deeper 12km+ analysis
-```
-
-Important nuance:
-
-```text
-the current GFS set is not the final answer
-it is the first independent background candidate used to test whether the
-background + observation route is worth continuing
-```
-
-## Why background matters in this project
-
-The purpose of background fields here is not to replace aircraft observations.
-It is to support reconstruction where observations are sparse, especially:
-
-- `12km+`
-- `count_0 / count_1`
-- `dist_ge6km`
-- `gap_ge30`
-- moderate `time_conf` risk layers
-
-The intended role is:
-
-```text
-observations constrain where they are strong
-background stabilizes where observations are weak
-```
-
-This is why the repository now separates:
-
-- `display-only background fill`
-- `report-only innovation diagnostics`
-- possible later `OI` official-branch experiments
-
-In project terms, the background is being tested to answer:
-
-```text
-can an independent large-scale prior help the 12km+ and sparse-support parts
-of the reconstruction problem without degrading stable low-risk regions?
-```
-
-## New scripts added in the current round
-
-### CMA / floor audit
-
-- `stage/centralized_v1/core/verify_cma_grib.py`
-- `stage/centralized_v1/core/centralized_stage4_error_floor_estimate.py`
-
-### GFS background pipeline
-
-- `stage/download_stage5_gfs_aws_cached_batch.py`
-- `workflow/plan/stage4_gfs_historical_background_200_20260625.sh`
-
-### Stage4 product demo
-
-- `workflow/plan/stage4_cma_m1_light_demo_20260625.sh`
-- `workflow/plan/stage4_cma_m1_representative_frames_20260625.txt`
-
-## Documentation entry points
-
-Recommended reading order for the current state:
-
-1. [workflow/centralized_v1_docs/new_window_project_handover_20260529/centralized_v1_ultimate_summary_20260612.md](workflow/centralized_v1_docs/new_window_project_handover_20260529/centralized_v1_ultimate_summary_20260612.md)
-2. [workflow/plan/plan_0625_executable.md](workflow/plan/plan_0625_executable.md)
-3. [优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md](优化/stage4_cma_m1_light_demo_20260625/stage4_cma_m1_light_demo_20260625_summary.md)
-4. [优化/stage4_cma_m1_light_demo_20260625/reports/cma_independence_report.md](优化/stage4_cma_m1_light_demo_20260625/reports/cma_independence_report.md)
-5. [优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md](优化/stage4_cma_m1_light_demo_20260625/reports/stage4_error_floor_estimate.md)
-6. [优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md](优化/stage4_cma_m1_light_demo_20260625/weekly_report_20260625.md)
-7. [workflow/centralized_v1_docs/new_window_project_handover_20260529/README.md](workflow/centralized_v1_docs/new_window_project_handover_20260529/README.md)
-
-## Current next steps
-
-The current recommended next execution path is:
-
-1. verify the completed `GFS` background set with a dedicated
-   `verify_gfs_background` report
-2. run `S4-OI-DIAG` with `GFS forecast` as the background
-3. finish `S4-CMA-M1` full-200 pairwise sealing if product-branch proof is
-   needed
-4. only then decide whether `local_oi` is worth implementing
-
-## Reporting rules
-
-Always report:
-
-- strict hold-out-only RMSE/MAE
-- no-holdout frame count separately
-- high-error tail metrics
-- `12km+` metrics
-- light-wind metrics
-- leakage and `motion_used_as_wind` flags
-- whether a branch is `official`, `display-only`, or `report-only`
-
-Never report:
-
-- CMA agreement as aircraft truth skill
-- all-frame RMSE with no-holdout zeros as the main skill metric
-- background-filled display area as official reconstruction skill
-- a reanalysis background as an independent OI background without proof
-
-## Safety / interpretation caveat
-
-Stage4 uses a `500 m` vertical grid and evaluates point `u/v` vector error.
-That is not numerically equivalent to an operational aviation wind-shear alert
-metric defined over much finer vertical layers.
-
-This codebase should therefore be described as:
-
-```text
-research-grade sparse 3D wind-field reconstruction with strict aircraft hold-out validation
-```
-
-and not as a deployed operational hazard-warning system.
+This repository is an internal research snapshot. Raw aviation observations and downloaded meteorological fields are not redistributed here. Check the source data terms and local project policy before sharing derived artifacts.

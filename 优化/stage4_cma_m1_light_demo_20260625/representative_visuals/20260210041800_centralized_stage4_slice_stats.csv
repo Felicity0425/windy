@@ -1,6 +1,0 @@
-slice,z,alt_m,x,active_voxels,support_voxels,low_conf_fill_voxels,blindzone_voxels,speed_min_mps,speed_mean_mps,speed_max_mps,conf_mean,conf_max,grid_total_voxels,effective_reconstructed_voxels,effective_reconstructed_fraction,low_conf_fill_fraction,mask_conf_positive_mismatch_voxels,bbox_z_min,bbox_z_max,bbox_y_min,bbox_y_max,bbox_x_min,bbox_x_max,bbox_lat_min,bbox_lat_max,bbox_lon_min,bbox_lon_max,bbox_alt_min_m,bbox_alt_max_m,speed_active_mean_mps,speed_active_max_mps,confidence_active_mean
-horizontal_z_5,5,2500.0,,406875,2436,404439,404439,0.0001727318885968998,7.861340522766113,32.99154281616211,0.18217802047729492,0.5869317650794983,,,,,,,,,,,,,,,,,,,,
-horizontal_z_17,17,8500.0,,406875,8210,398665,398665,0.00017683165788184851,26.483556747436523,88.03429412841797,0.13271738588809967,1.0,,,,,,,,,,,,,,,,,,,,
-horizontal_z_29,29,14500.0,,406875,11902,394973,394973,0.00027188664535060525,31.572660446166992,171.0930633544922,0.17423202097415924,1.0,,,,,,,,,,,,,,,,,,,,
-vertical_x_502,,,502,16275,3467,12808,12808,0.00021129378001205623,18.6728572845459,83.14983367919922,0.1870562732219696,1.0,,,,,,,,,,,,,,,,,,,,
-domain_extent,,,,,,12392242,,,,,,,12613125,12613125,1.0,0.9824878450027253,0,0,30,0,524,0,774,12.200000000000003,54.2,73.0,135.0,0.0,15000.0,21.27187156677246,171.0930633544922,0.1614263951778412

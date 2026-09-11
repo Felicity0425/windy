@@ -1,1 +1,0 @@
-/data/LFT-W02_data/pengxu/stage/download_stage5_gfs_aws_historical_roi.py

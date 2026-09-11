@@ -1,1 +1,0 @@
-/data/LFT-W02_data/pengxu/stage/run_stage5_rolling_roi.py

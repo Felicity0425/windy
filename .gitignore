@@ -39,6 +39,20 @@ stage/_organized_stage/08_logs_views/
 centralized_v1_output/
 _organized_outputs/
 stage5_visualizations/
+优化/
+
+# Retained locally for historical reference, not part of the public repo.
+workflow/raw/
+workflow/plan/
+workflow/skill/
+workflow/github_backup_20260529/
+workflow/project_stage1_4_summaries/
+workflow/centralized_v1_docs/new_window_project_handover_20260529/
+stage/_organized_stage/
+stage/handover_stage45_20260507/
+stage/S202605271628361904100.txt
+stage/hello.py
+test_model.py
 
 # Large/raw meteorological or tabular data
 cma/
@@ -67,7 +81,6 @@ windpaper/
 *.7z
 *.bundle
 
-# Explicitly back up Stage1 outputs. Parquet files here are tracked by Git LFS.
+# Keep lightweight Stage1 manifests; raw tabular data stays local.
 !stage1_output/
 !stage1_output/*.json
-!stage1_output/*.parquet
